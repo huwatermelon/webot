@@ -238,6 +238,10 @@ export class CaseStore {
     `).run(String(key), String(value), now());
   }
 
+  deleteRuntimeSetting(key) {
+    this.db.prepare("DELETE FROM runtime_settings WHERE key=?").run(String(key));
+  }
+
   ingest(message, text = message.text) {
     const caseId = caseIdFor(message);
     const createdAt = now();
@@ -351,6 +355,22 @@ export class CaseStore {
       WHERE case_id=? AND id=?
     `).get(caseId, Number(messageRowId));
     return row ? { ...row, message: json(row.message_json, {}) } : null;
+  }
+
+  updateMessageText(caseId, messageRowId, text) {
+    const row = this.messageByRowId(caseId, messageRowId);
+    if (!row) return false;
+    const message = { ...row.message, text: String(text || "") };
+    this.db.prepare(`
+      UPDATE messages SET text=?, message_json=?
+      WHERE case_id=? AND id=?
+    `).run(
+      String(text || ""),
+      JSON.stringify(message),
+      caseId,
+      Number(messageRowId),
+    );
+    return true;
   }
 
   pendingMessages(caseId, afterMessageId = 0) {
@@ -478,6 +498,30 @@ export class CaseStore {
     `).run(now(), caseId);
     this.addProgress(caseId, session.run_count, "Codex session 已重置");
     return true;
+  }
+
+  markControlHandled(caseId, messageRowId) {
+    const timestamp = now();
+    const messageId = Number(messageRowId || 0);
+    this.db.prepare(`
+      INSERT INTO worker_sessions(
+        case_id, status, run_count, finished_at, last_error,
+        last_processed_message_id, input_cutoff_message_id, updated_at
+      ) VALUES (?, 'draft_ready', 0, ?, '', ?, ?, ?)
+      ON CONFLICT(case_id) DO UPDATE SET
+        status='draft_ready',
+        finished_at=excluded.finished_at,
+        last_error='',
+        last_processed_message_id=MAX(
+          worker_sessions.last_processed_message_id,
+          excluded.last_processed_message_id
+        ),
+        input_cutoff_message_id=MAX(
+          worker_sessions.input_cutoff_message_id,
+          excluded.input_cutoff_message_id
+        ),
+        updated_at=excluded.updated_at
+    `).run(caseId, timestamp, messageId, messageId, timestamp);
   }
 
   addProgress(caseId, runCount, message, level = "info") {

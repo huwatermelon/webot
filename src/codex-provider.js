@@ -599,8 +599,15 @@ export function createCodexProvider(config, options = {}) {
       currentMessageCount,
       signal,
       onItem,
+      runtimeOverrides = {},
     }) {
-      const runtime = codexRuntimeStatus(config);
+      const effectiveConfig = {
+        ...config,
+        codexModel: nonEmpty(runtimeOverrides.model) || config.codexModel,
+        reasoningEffort:
+          nonEmpty(runtimeOverrides.reasoningEffort) || config.reasoningEffort,
+      };
+      const runtime = codexRuntimeStatus(effectiveConfig);
       if (!runtime.binaryReady) {
         throw new Error(`Codex executable is unavailable: ${runtime.binary}`);
       }
@@ -608,7 +615,7 @@ export function createCodexProvider(config, options = {}) {
       const knowledge = knowledgeText(
         await searchKnowledge(message.text, { access, message }),
       );
-      const result = await runner(config, {
+      const result = await runner(effectiveConfig, {
         sessionId: nonEmpty(codexSessionId),
         prompt: promptFor({
           caseId,

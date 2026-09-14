@@ -675,7 +675,87 @@ test("sends natural-language intermediate items only for owner tasks", async () 
 
   assert.deepEqual(
     (await runFor("owner")).map((item) => item.text),
-    ["收到，开始处理。", "正在检查配置"],
+    ["正在检查配置"],
   );
   assert.deepEqual(await runFor("public"), []);
+});
+
+test("handles owner slash commands locally and sends exactly one reply", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-slash-"));
+  const codexHome = path.join(directory, "codex");
+  await fs.mkdir(codexHome);
+  await fs.writeFile(
+    path.join(codexHome, "models_cache.json"),
+    JSON.stringify({ models: [{ slug: "gpt-test" }] }),
+  );
+  const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
+  const sent = [];
+  let providerCalls = 0;
+  const manager = new CaseManager({
+    config: {
+      assistant: {
+        mode: "codex",
+        codexHome,
+        codexModel: "gpt-test",
+        reasoningEffort: "high",
+      },
+      caseManagement: {
+        autoRun: true,
+        autoSend: true,
+        ownerIntermediateItems: true,
+        workerConcurrency: 1,
+      },
+      pad: {
+        sources: [{
+          id: "small",
+          strictPolicy: true,
+          allowSelf: false,
+          selfChatPeers: new Set(["owner_wxid"]),
+          acceptSelfChatPeerMessages: true,
+          allowedChatIds: new Set(),
+          allowedSenderIds: new Set(),
+          privateNicknameAllowlist: new Set(),
+          triggerKeywords: new Set(["webot"]),
+          botNames: new Set(["Webot"]),
+        }],
+      },
+      policy: {
+        blockedSenderIds: new Set(),
+        allowSelf: false,
+        allowedChatIds: new Set(),
+        allowedSenderIds: new Set(),
+        groupTriggers: new Set(["webot"]),
+      },
+      identity: { botNames: new Set(["Webot"]) },
+    },
+    provider: {
+      async reply() {
+        providerCalls += 1;
+        return { text: "unexpected" };
+      },
+    },
+    sessionStore: new SessionStore(path.join(directory, "sessions"), 4),
+    caseStore,
+    transports: {
+      pad: {
+        async send(_target, text) {
+          sent.push(text);
+          return { ok: true, dryRun: false };
+        },
+      },
+    },
+    requesterAccess: () => "owner",
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  const command = message("slash-models");
+  command.text = "/models";
+  const received = await manager.receive(command);
+  assert.equal(received.command, "model");
+  assert.equal(received.queued, false);
+  assert.equal(providerCalls, 0);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0], /当前模型：gpt-test/);
+  assert.equal(caseStore.detail(received.caseId).drafts.length, 1);
+  caseStore.close();
 });

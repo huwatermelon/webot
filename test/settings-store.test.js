@@ -43,6 +43,44 @@ test("redacts secrets and preserves them by account id", async () => {
   assert.equal((await fs.stat(file)).mode & 0o777, 0o600);
 });
 
+test("merges partial settings without discarding unrelated sections", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-settings-"));
+  const file = path.join(directory, "settings.json");
+  const store = new SettingsStore(file);
+  await store.save({
+    channels: ["pad"],
+    outboundMode: "live",
+    assistant: { mode: "codex", codexModel: "gpt-test" },
+    caseManagement: {
+      autoRun: true,
+      autoSend: true,
+      workerConcurrency: 1,
+      ownerIntermediateItems: true,
+    },
+    pad: {
+      sources: [{
+        id: "small",
+        accessToken: "secret",
+        enabled: true,
+      }],
+    },
+  });
+
+  const merged = store.merged({
+    caseManagement: { ownerIntermediateItems: false },
+  });
+  assert.deepEqual(merged.channels, ["pad"]);
+  assert.equal(merged.outboundMode, "live");
+  assert.equal(merged.assistant.codexModel, "gpt-test");
+  assert.deepEqual(merged.caseManagement, {
+    autoRun: true,
+    autoSend: true,
+    workerConcurrency: 1,
+    ownerIntermediateItems: false,
+  });
+  assert.equal(merged.pad.sources[0].accessToken, "secret");
+});
+
 test("serialized opt settings omit callback compatibility fields", () => {
   const config = loadConfig({}, {
     channels: ["pad"],

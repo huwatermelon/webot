@@ -12,6 +12,7 @@ function clone(value) {
 }
 
 function preserveSecrets(next, previous) {
+  if (next === undefined) return clone(previous);
   if (Array.isArray(next)) {
     const previousItems = Array.isArray(previous) ? previous : [];
     const previousById = new Map(
@@ -28,7 +29,10 @@ function preserveSecrets(next, previous) {
     });
   }
   if (!next || typeof next !== "object") return next;
-  const output = {};
+  const output =
+    previous && typeof previous === "object" && !Array.isArray(previous)
+      ? clone(previous)
+      : {};
   for (const [key, value] of Object.entries(next)) {
     if (SECRET_FIELDS.has(key) && value === "") {
       output[key] = previous?.[key] || "";

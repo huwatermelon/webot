@@ -148,6 +148,47 @@ test("returns structured Codex results through the provider", async () => {
   assert.equal(result.sessionId, "session-2");
 });
 
+test("applies per-session model and effort overrides to Codex runs", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-codex-"));
+  const binary = path.join(directory, "codex");
+  await fs.writeFile(binary, "");
+  await fs.chmod(binary, 0o700);
+  let selected = null;
+  const provider = createCodexProvider(
+    {
+      codexBin: binary,
+      codexHome: directory,
+      workingDirectory: directory,
+      codexModel: "gpt-default",
+      reasoningEffort: "high",
+    },
+    {
+      requesterAccess: () => "owner",
+      runCodex: async (config) => {
+        selected = {
+          model: config.codexModel,
+          effort: config.reasoningEffort,
+        };
+        return { text: "done", model: config.codexModel };
+      },
+    },
+  );
+
+  await provider.reply({
+    caseId: "case-1",
+    message: { text: "run" },
+    history: [],
+    runtimeOverrides: {
+      model: "gpt-session",
+      reasoningEffort: "low",
+    },
+  });
+  assert.deepEqual(selected, {
+    model: "gpt-session",
+    effort: "low",
+  });
+});
+
 test("reads commentary progress from a Codex session JSONL tail", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-tail-"));
   const file = path.join(directory, "session.jsonl");

@@ -39,4 +39,9 @@ export class SessionStore {
       { mode: 0o600 },
     );
   }
+
+  async clear(chatKey) {
+    this.cache.delete(chatKey);
+    await fs.rm(this.fileFor(chatKey), { force: true });
+  }
 }

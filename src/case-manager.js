@@ -1,4 +1,9 @@
 import { acceptedMessage } from "./runtime.js";
+import {
+  applyControlCommand,
+  parseControlCommand,
+  runtimeOverrides,
+} from "./control-commands.js";
 
 export class CaseManager {
   constructor({
@@ -18,6 +23,7 @@ export class CaseManager {
     this.requesterAccess = requesterAccess;
     this.logger = logger;
     this.running = new Map();
+    this.runPromises = new Map();
     this.queue = [];
     this.rerun = new Set();
     this.forced = new Set();
@@ -51,6 +57,59 @@ export class CaseManager {
     const ingested = this.caseStore.ingest(clean, clean.text);
     if (!ingested.inserted) {
       return { accepted: false, reason: "duplicate", caseId: ingested.caseId };
+    }
+    const owner = this.requesterAccess(clean) === "owner";
+    const command = owner ? parseControlCommand(clean.text) : null;
+    if (command) {
+      let stopped = false;
+      if (command.type === "stop") stopped = this.stop(ingested.caseId);
+      const active = this.runPromises.get(ingested.caseId);
+      if (active) await active.catch(() => {});
+      const result = await applyControlCommand({
+        command,
+        caseId: ingested.caseId,
+        caseStore: this.caseStore,
+        sessionStore: this.sessionStore,
+        config: this.config.assistant,
+        stopped,
+      });
+      if (result.continueText) {
+        clean.text = result.continueText;
+        this.caseStore.updateMessageText(
+          ingested.caseId,
+          ingested.messageRow,
+          result.continueText,
+        );
+      } else {
+        const reply = String(result.text || "").trim();
+        this.caseStore.markControlHandled(ingested.caseId, ingested.messageRow);
+        const draftId = this.caseStore.addDraft(
+          ingested.caseId,
+          reply,
+          result.model || runtimeOverrides(
+            this.caseStore,
+            ingested.caseId,
+          ).model || this.config.assistant.codexModel,
+          {
+            triggerMessageId: ingested.messageRow,
+            inputCutoffMessageId: ingested.messageRow,
+          },
+        );
+        this.caseStore.addProgress(
+          ingested.caseId,
+          0,
+          `控制命令已处理，draft #${draftId} 已生成`,
+        );
+        if (this.caseSettings().autoSend !== false) {
+          await this.sendDraft(ingested.caseId, draftId);
+        }
+        return {
+          accepted: true,
+          caseId: ingested.caseId,
+          queued: false,
+          command: command.type,
+        };
+      }
     }
     await this.sessionStore.append(ingested.caseId, "user", clean.text);
     if (this.caseSettings().autoRun !== false) {
@@ -105,7 +164,7 @@ export class CaseManager {
     while (this.active < concurrency && this.queue.length) {
       const caseId = this.queue.shift();
       this.active += 1;
-      this.run(caseId)
+      const operation = this.run(caseId)
         .catch((error) => {
           this.logger.error("case worker failed", {
             caseId,
@@ -113,9 +172,11 @@ export class CaseManager {
           });
         })
         .finally(() => {
+          this.runPromises.delete(caseId);
           this.active -= 1;
           this.drain();
         });
+      this.runPromises.set(caseId, operation);
     }
   }
 
@@ -169,10 +230,6 @@ export class CaseManager {
       }
     };
     try {
-      await onItem({
-        type: "agent_message",
-        text: "收到，开始处理。",
-      });
       const history = await this.sessionStore.history(caseId);
       const currentText = pending
         .map((item) => String(item.text || item.message?.text || "").trim())
@@ -191,6 +248,7 @@ export class CaseManager {
         currentMessageCount: pending.length,
         signal: controller.signal,
         onItem,
+        runtimeOverrides: runtimeOverrides(this.caseStore, caseId),
       });
       const result = typeof providerResult === "string"
         ? { text: providerResult }
