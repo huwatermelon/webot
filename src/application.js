@@ -194,6 +194,10 @@ export class WebotApplication {
     return this.caseManager.setPaused(paused);
   }
 
+  beginWorkerDrain() {
+    return this.caseManager.beginDrain();
+  }
+
   async updateSettings(next) {
     const candidate = this.settingsStore.merged(next);
     const candidateConfig = loadConfig(this.env, candidate);

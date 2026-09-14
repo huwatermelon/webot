@@ -269,6 +269,62 @@ test("reruns a case when another message arrives during an active worker", async
   caseStore.close();
 });
 
+test("drain mode stops starting new workers without persisting a pause", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-drain-"));
+  const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
+  let replies = 0;
+  const config = {
+    assistant: { mode: "codex", llmModel: "" },
+    caseManagement: { autoRun: true, autoSend: false, workerConcurrency: 1 },
+    pad: {
+      sources: [{
+        id: "small",
+        strictPolicy: true,
+        allowSelf: false,
+        selfChatPeers: new Set(["owner_wxid"]),
+        acceptSelfChatPeerMessages: true,
+        allowedChatIds: new Set(),
+        allowedSenderIds: new Set(),
+        privateNicknameAllowlist: new Set(),
+        triggerKeywords: new Set(["webot"]),
+        botNames: new Set(["Webot"]),
+      }],
+    },
+    policy: {
+      blockedSenderIds: new Set(),
+      allowSelf: false,
+      allowedChatIds: new Set(),
+      allowedSenderIds: new Set(),
+      groupTriggers: new Set(["webot"]),
+    },
+    identity: { botNames: new Set(["Webot"]) },
+  };
+  const manager = new CaseManager({
+    config,
+    provider: {
+      async reply() {
+        replies += 1;
+        return "unused";
+      },
+    },
+    sessionStore: new SessionStore(path.join(directory, "sessions"), 4),
+    caseStore,
+    transports: {},
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  const draining = manager.beginDrain();
+  assert.equal(draining.draining, true);
+  assert.equal(draining.paused, false);
+  await manager.receive(message("drain-message"));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(replies, 0);
+  assert.equal(manager.status().queued, 1);
+  assert.equal(caseStore.detail("wechat:small:self-pair:owner_wxid--wxid_small").status, "new");
+  caseStore.close();
+});
+
 test("combines all unprocessed messages into one new Codex turn", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-pending-turn-"));
   const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));

@@ -298,6 +298,16 @@ export function createServer({
           });
           return;
         }
+        if (
+          request.method === "POST" &&
+          url.pathname === "/api/admin/workers/drain"
+        ) {
+          respond(response, 200, {
+            ok: true,
+            workers: application.beginWorkerDrain(),
+          });
+          return;
+        }
         respond(response, 404, { ok: false, error: "not found" });
         return;
       }

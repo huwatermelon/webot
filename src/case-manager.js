@@ -22,6 +22,7 @@ export class CaseManager {
     this.rerun = new Set();
     this.forced = new Set();
     this.active = 0;
+    this.draining = false;
   }
 
   paused() {
@@ -32,6 +33,11 @@ export class CaseManager {
     this.caseStore.setRuntimeSetting("workers_paused", value ? "1" : "0");
     if (!value) this.drain();
     return this.paused();
+  }
+
+  beginDrain() {
+    this.draining = true;
+    return this.status();
   }
 
   caseSettings() {
@@ -91,7 +97,7 @@ export class CaseManager {
   }
 
   drain() {
-    if (this.paused()) return;
+    if (this.paused() || this.draining) return;
     const concurrency = Math.max(
       1,
       Math.min(Number(this.caseSettings().workerConcurrency || 2), 8),
@@ -310,6 +316,7 @@ export class CaseManager {
   status() {
     return {
       paused: this.paused(),
+      draining: this.draining,
       active: this.active,
       queued: this.queue.length + this.rerun.size,
       runningCaseIds: [...this.running.keys()],
