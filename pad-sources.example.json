@@ -1,0 +1,41 @@
+{
+  "sources": [
+    {
+      "id": "main",
+      "display_name": "大号",
+      "self_wxid": "wxid_main",
+      "ws_url": "ws://127.0.0.1:18102/ws/wxid_main",
+      "api_url": "http://127.0.0.1:18102/api",
+      "access_token_env": "WEBOT_PAD_MAIN_ACCESS_TOKEN",
+      "allow_self_chat": true,
+      "accept_self_chat_peer_messages": false,
+      "self_chat_peers": [
+        "wxid_small"
+      ],
+      "group_chat_ids": [],
+      "private_sender_ids": [],
+      "private_nickname_allowlist": []
+    },
+    {
+      "id": "small",
+      "display_name": "小号",
+      "self_wxid": "wxid_small",
+      "ws_url": "ws://127.0.0.1:18102/ws/wxid_small",
+      "api_url": "http://127.0.0.1:18102/api",
+      "access_token_env": "WEBOT_PAD_SMALL_ACCESS_TOKEN",
+      "allow_self_chat": false,
+      "accept_self_chat_peer_messages": true,
+      "self_chat_peers": [
+        "wxid_main"
+      ],
+      "group_chat_ids": [
+        "first@chatroom",
+        "second@chatroom"
+      ],
+      "private_sender_ids": [],
+      "private_nickname_allowlist": [
+        "可选昵称"
+      ]
+    }
+  ]
+}

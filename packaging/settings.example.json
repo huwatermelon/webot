@@ -1,0 +1,60 @@
+{
+  "channels": [
+    "pad"
+  ],
+  "outboundMode": "dry-run",
+  "identity": {
+    "selfId": "",
+    "botNames": [
+      "Webot"
+    ]
+  },
+  "policy": {
+    "groupTriggers": [
+      "webot",
+      "机器人"
+    ],
+    "ownerSenderIds": [],
+    "allowedChatIds": [],
+    "allowedSenderIds": [],
+    "blockedSenderIds": [],
+    "allowSelf": false
+  },
+  "assistant": {
+    "mode": "codex",
+    "systemPrompt": "你是当前用户的微信数字分身助手 Webot。优先完成当前任务并给出可验证结果，回复简洁自然。具体身份、称呼、职责和权限以工作目录中的 AGENTS.md 为准。",
+    "historyTurns": 12,
+    "timeoutMs": 0,
+    "codexBin": "",
+    "codexHome": "",
+    "workingDirectory": "",
+    "codexModel": "",
+    "reasoningEffort": "",
+    "serviceTier": "",
+    "webhookUrl": "",
+    "webhookToken": "",
+    "llmBaseUrl": "https://api.openai.com/v1",
+    "llmApiKey": "",
+    "llmModel": ""
+  },
+  "caseManagement": {
+    "autoRun": true,
+    "autoSend": true,
+    "ownerIntermediateItems": false,
+    "workerConcurrency": 2
+  },
+  "knowledgeBase": {
+    "enabled": false,
+    "remote": "",
+    "branch": "main",
+    "localDir": "",
+    "syncIntervalSeconds": 900,
+    "maxNotes": 4,
+    "maxCharsPerNote": 4000,
+    "requireApproved": true
+  },
+  "pad": {
+    "requireWriteConfirmation": true,
+    "sources": []
+  }
+}

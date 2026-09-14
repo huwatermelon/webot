@@ -1,0 +1,8 @@
+.env
+.DS_Store
+node_modules/
+state/
+.build/
+dist/
+*.log
+*.pid

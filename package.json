@@ -1,0 +1,31 @@
+{
+  "name": "webot",
+  "version": "0.6.0",
+  "description": "A self-hosted personal assistant and digital twin for WeChat.",
+  "type": "module",
+  "bin": {
+    "webot": "./bin/webot.js"
+  },
+  "scripts": {
+    "start": "node ./bin/webot.js",
+    "start:service": "./scripts/run-source.sh",
+    "build:ui": "node ./scripts/build-ui.mjs",
+    "check": "node --check ./bin/webot.js && node --check ./src/server.js",
+    "test": "node --test",
+    "privacy-check": "node ./scripts/check-public-tree.cjs",
+    "verify": "npm run build:ui && npm run check && npm run privacy-check && npm test",
+    "build": "node ./scripts/build-release.mjs",
+    "release": "npm run verify && npm run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "lucide": "^0.468.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9",
+    "postject": "^1.0.0-alpha.6"
+  }
+}

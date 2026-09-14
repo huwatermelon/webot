@@ -1,0 +1,76 @@
+# Architecture
+
+## Message Flow
+
+```text
+gateway WebSocket -> normalize -> policy -> SQLite message
+                                      |
+                                      v
+                                    Case
+                                      |
+                                      v
+                              worker/session queue
+                                      |
+                                      v
+                                    draft
+                                      |
+                         manual send or automatic send
+                                      |
+                                      v
+                              gateway outbound
+```
+
+Adapters convert protocol-specific events into this internal shape:
+
+```json
+{
+  "transport": "pad",
+  "sourceId": "main",
+  "messageId": "123",
+  "timestamp": 1770000000000,
+  "chatType": "private",
+  "chatId": "wxid_peer",
+  "senderId": "wxid_peer",
+  "senderName": "Peer",
+  "selfId": "wxid_bot",
+  "text": "hello",
+  "mentions": []
+}
+```
+
+Raw envelopes are not sent to the assistant backend. Normalized messages,
+Cases, worker sessions, progress events, drafts, and send results are persisted
+in `webot.sqlite`. Bounded assistant history remains in the session directory.
+
+## Runtime Controls
+
+- `WEBOT_CHANNELS` selects which connectors start.
+- `WEBOT_OUTBOUND_MODE` gates all sends; only `live` performs network writes.
+- Optional chat and sender allowlists narrow accepted traffic.
+- A Case never runs two workers concurrently; new inbound during a run schedules
+  one follow-up pass over the latest persisted context.
+- Every accepted message updates a stable account-scoped Case.
+- Worker execution and draft sending are separate persisted stages.
+- Workers can be paused globally, rerun per Case, or stopped while active.
+- Drafts can be sent automatically or reviewed and sent from the Case console.
+- Gateway queues and history keys include the source-defined conversation id.
+- Multi-account replies resolve credentials from the originating source.
+- Self-account pairs have explicit per-direction ingress permission.
+- The AI echo marker is emitted only for same-account private self replies.
+- A SQLite unique constraint suppresses repeated delivery of the same source
+  event.
+
+## Connector Boundary
+
+Webot intentionally does not package a client hook or WeChatPad gateway. These
+components are version-sensitive and may have separate licensing and account
+risk. They connect to Webot through explicit HTTP/WebSocket contracts.
+
+## Production Checklist
+
+1. Bind Webot and upstream APIs to loopback or a trusted private network.
+2. Set callback secrets and upstream Access Codes.
+3. Set explicit chat or sender allowlists.
+4. Validate inbound events with `WEBOT_OUTBOUND_MODE=dry-run`.
+5. Back up the state directory.
+6. Enable `live` outbound only after account-side verification.

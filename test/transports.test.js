@@ -1,0 +1,287 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { HookTransport } from "../src/transports/hook.js";
+import {
+  formatPadReplyText,
+  PadTransport,
+  PadWebSocketClient,
+} from "../src/transports/pad.js";
+
+function replaceWebSocket(context, replacement) {
+  const original = globalThis.WebSocket;
+  Object.defineProperty(globalThis, "WebSocket", {
+    configurable: true,
+    writable: true,
+    value: replacement,
+  });
+  context.after(() => {
+    Object.defineProperty(globalThis, "WebSocket", {
+      configurable: true,
+      writable: true,
+      value: original,
+    });
+  });
+}
+
+test("Hook transport uses OneBot private and group endpoints", async (context) => {
+  const calls = [];
+  context.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ status: "ok", retcode: 0 }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  const transport = new HookTransport(
+    { apiUrl: "http://hook.local", accessToken: "" },
+    "live",
+  );
+
+  await transport.send(
+    { chatType: "private", chatId: "wxid_peer" },
+    "private reply",
+  );
+  await transport.send(
+    { chatType: "group", chatId: "room@chatroom" },
+    "group reply",
+  );
+
+  assert.equal(calls[0].url, "http://hook.local/send_private_msg");
+  assert.equal(calls[0].body.user_id, "wxid_peer");
+  assert.equal(calls[1].url, "http://hook.local/send_group_msg");
+  assert.equal(calls[1].body.group_id, "room@chatroom");
+});
+
+test("Pad transport sends the expected text contract", async (context) => {
+  let call;
+  context.mock.method(globalThis, "fetch", async (url, options) => {
+    call = {
+      url,
+      headers: options.headers,
+      body: JSON.parse(options.body),
+    };
+    return new Response(JSON.stringify({ BaseResponse: { Ret: 0 } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  const transport = new PadTransport(
+    {
+      apiUrl: "http://pad.local",
+      accessToken: "test-token",
+      requireWriteConfirmation: true,
+    },
+    "live",
+  );
+
+  await transport.send(
+    { chatType: "private", chatId: "wxid_peer" },
+    "pad reply",
+  );
+
+  assert.equal(call.url, "http://pad.local/v1/messages/send-text");
+  assert.equal(call.headers["X-Access-Token"], "test-token");
+  assert.equal(call.body.to, "wxid_peer");
+  assert.equal(call.body.content, "pad reply");
+  assert.equal(call.body.type, 1);
+  assert.equal(call.body.confirm, true);
+  assert.match(call.body.request_id, /^[0-9a-f-]{36}$/);
+});
+
+test("Pad transport rejects uppercase API failures", async (context) => {
+  context.mock.method(globalThis, "fetch", async () =>
+    Response.json(
+      { Success: false, Code: -2, Message: "发送失败" },
+      { status: 200 },
+    ),
+  );
+  const transport = new PadTransport(
+    {
+      apiUrl: "http://pad.local",
+      accessToken: "test-token",
+      requireWriteConfirmation: false,
+    },
+    "live",
+  );
+
+  await assert.rejects(
+    transport.send(
+      { chatType: "private", chatId: "wxid_peer" },
+      "pad reply",
+    ),
+    /Pad send failed/,
+  );
+});
+
+test("Pad transport replies through the originating source account", async (context) => {
+  let call;
+  context.mock.method(globalThis, "fetch", async (url, options) => {
+    call = {
+      url,
+      headers: options.headers,
+      body: JSON.parse(options.body),
+    };
+    return new Response(JSON.stringify({ BaseResponse: { Ret: 0 } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+  const transport = new PadTransport({
+    requireWriteConfirmation: false,
+    sources: [{
+      id: "small",
+      apiUrl: "http://small.local",
+      accessToken: "small-token",
+      selfId: "wxid_small",
+      strictPolicy: true,
+    }],
+  }, "live");
+
+  await transport.send({
+    sourceId: "small",
+    chatType: "private",
+    chatId: "owner_wxid",
+    replyTarget: "owner_wxid",
+  }, "收到");
+
+  assert.equal(call.url, "http://small.local/v1/messages/send-text");
+  assert.equal(call.headers["X-Access-Token"], "small-token");
+  assert.equal(call.body.to, "owner_wxid");
+  assert.equal(call.body.content, "收到");
+});
+
+test("Pad transport keeps the AI marker only for same-account self replies", () => {
+  const source = {
+    id: "main",
+    selfId: "owner_wxid",
+    strictPolicy: true,
+  };
+
+  assert.equal(
+    formatPadReplyText(
+      "收到",
+      {
+        chatType: "private",
+        replyTarget: "owner_wxid",
+      },
+      source,
+    ),
+    "【AI】收到",
+  );
+  assert.equal(
+    formatPadReplyText(
+      "【AI】跨账号回复",
+      {
+        chatType: "private",
+        replyTarget: "wxid_small",
+      },
+      source,
+    ),
+    "跨账号回复",
+  );
+  assert.equal(
+    formatPadReplyText(
+      "【AI 1/2】群回复",
+      {
+        chatType: "group",
+        replyTarget: "room@chatroom",
+      },
+      source,
+    ),
+    "群回复",
+  );
+  assert.equal(
+    formatPadReplyText(
+      "【AI】旧模式原文",
+      {
+        chatType: "private",
+        replyTarget: "wxid_peer",
+      },
+      {
+        selfId: "wxid_bot",
+        strictPolicy: false,
+      },
+    ),
+    "【AI】旧模式原文",
+  );
+});
+
+test("Pad WebSocket error does not recursively close the failing socket", (context) => {
+  class FakeWebSocket extends EventTarget {
+    static instances = [];
+
+    constructor(url) {
+      super();
+      this.url = String(url);
+      this.closeCalls = 0;
+      FakeWebSocket.instances.push(this);
+    }
+
+    close() {
+      this.closeCalls += 1;
+      this.dispatchEvent(new Event("error"));
+    }
+  }
+
+  replaceWebSocket(context, FakeWebSocket);
+  const client = new PadWebSocketClient(
+    {
+      id: "small-opt",
+      selfId: "wxid_small",
+      wsUrl: "ws://127.0.0.1:18102/ws/wxid_small",
+      accessToken: "test-token",
+    },
+    "wxid_small",
+    async () => {},
+    { info() {}, warn() {}, error() {} },
+  );
+
+  client.start();
+  const socket = FakeWebSocket.instances[0];
+  socket.dispatchEvent(new Event("error"));
+
+  assert.equal(client.status().lastError, "websocket error");
+  assert.equal(socket.closeCalls, 0);
+  client.stop();
+  assert.equal(socket.closeCalls, 1);
+});
+
+test("Pad WebSocket ignores stale socket events after reconnect", (context) => {
+  class FakeWebSocket extends EventTarget {
+    static instances = [];
+
+    constructor() {
+      super();
+      FakeWebSocket.instances.push(this);
+    }
+
+    close() {}
+  }
+
+  replaceWebSocket(context, FakeWebSocket);
+  const client = new PadWebSocketClient(
+    {
+      id: "small-opt",
+      selfId: "wxid_small",
+      wsUrl: "ws://127.0.0.1:18102/ws/wxid_small",
+      accessToken: "test-token",
+    },
+    "wxid_small",
+    async () => {},
+    { info() {}, warn() {}, error() {} },
+  );
+
+  client.start();
+  const oldSocket = FakeWebSocket.instances[0];
+  oldSocket.dispatchEvent(new Event("close"));
+  clearTimeout(client.timer);
+  client.timer = null;
+  client.connect();
+  const currentSocket = FakeWebSocket.instances[1];
+  currentSocket.dispatchEvent(new Event("open"));
+  oldSocket.dispatchEvent(new Event("close"));
+
+  assert.equal(client.socket, currentSocket);
+  assert.equal(client.status().connected, true);
+  client.stop();
+});

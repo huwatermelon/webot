@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Webot Console</title>
+  <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><i data-lucide="message-square"></i></div>
+        <div><strong>Webot</strong><span>Console</span></div>
+      </div>
+      <nav aria-label="管理视图">
+        <button class="nav-item active" data-view="cases"><i data-lucide="inbox"></i><span>Case</span></button>
+        <button class="nav-item" data-view="overview"><i data-lucide="layout-dashboard"></i><span>概览</span></button>
+        <button class="nav-item" data-view="accounts"><i data-lucide="users"></i><span>微信账号</span></button>
+        <button class="nav-item" data-view="assistant"><i data-lucide="brain-circuit"></i><span>助手与知识库</span></button>
+        <button class="nav-item" data-view="release"><i data-lucide="package-check"></i><span>运行与发布</span></button>
+      </nav>
+      <div class="sidebar-foot">
+        <span id="service-dot" class="status-dot"></span>
+        <span id="service-label">正在连接</span>
+      </div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="view-eyebrow">SYSTEM</p>
+          <h1 id="view-title">运行概览</h1>
+        </div>
+        <div class="top-actions">
+          <span class="save-state" id="save-state"></span>
+          <button class="button secondary" id="refresh-button" title="刷新状态"><i data-lucide="refresh-cw"></i><span>刷新</span></button>
+          <button class="button primary" id="save-button"><i data-lucide="save"></i><span>保存配置</span></button>
+        </div>
+      </header>
+      <div id="notice" class="notice hidden" role="status"></div>
+      <section id="content" class="content" aria-live="polite"></section>
+    </main>
+  </div>
+  <script type="module" src="/assets/admin.js"></script>
+</body>
+</html>
