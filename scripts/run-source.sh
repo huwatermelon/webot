@@ -14,6 +14,7 @@ if [ ! -x "$NODE_BIN" ]; then
 fi
 
 export WEBOT_RUNTIME_MODE="source"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 REVISION_FILE="${WEBOT_SOURCE_REVISION_FILE:-$HOME/Library/Application Support/Webot/source-revision}"
 WEBOT_SOURCE_REVISION="unknown"
 if [ -r "$REVISION_FILE" ]; then

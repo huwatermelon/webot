@@ -9,7 +9,8 @@ It provides:
 - Named, isolated owner sessions controlled with `/session` commands.
 - Multi-account WeChat gateway connections.
 - Automatic or reviewed draft replies.
-- Image cards and confirmed file-card delivery for requested artifacts.
+- Image cards, audio delivery, and confirmed file-card delivery when supported
+  by the configured gateway.
 - A local knowledge base with public and owner-only audiences.
 - A loopback-only administration console.
 
@@ -24,6 +25,17 @@ npm start
 ```
 
 The administration console is available at `http://127.0.0.1:18120`.
+
+For a local service that follows repository changes without rebuilding or
+codesigning a standalone executable:
+
+```bash
+./scripts/install-launchd.sh
+```
+
+The LaunchAgent uses the stable Node.js executable to load `bin/webot.js`
+directly. Run `npm run verify`, commit the change, and restart the service with
+the same command after source updates.
 
 Runtime settings, messages, sessions, credentials, and knowledge are stored
 outside the source tree in the local Webot data directory. Configure gateway

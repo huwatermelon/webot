@@ -323,7 +323,6 @@ export class CaseManager {
     if (!target) throw new Error("case has no reply target");
     const transport = this.transports[target.message.transport];
     if (!transport) throw new Error("reply transport is unavailable");
-    const textOutbound = await transport.send(target.message, draft.text);
     const artifactOutbounds = [];
     for (const artifact of draft.artifacts || []) {
       if (typeof transport.sendArtifact !== "function") {
@@ -333,6 +332,7 @@ export class CaseManager {
         await transport.sendArtifact(target.message, artifact),
       );
     }
+    const textOutbound = await transport.send(target.message, draft.text);
     const outbound = {
       ok: true,
       dryRun:

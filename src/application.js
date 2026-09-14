@@ -250,6 +250,13 @@ export class WebotApplication {
   }
 
   status() {
+    const runtimeMode =
+      process.env.WEBOT_RUNTIME_MODE ||
+      (
+        String(process.argv[1] || "").endsWith("/bin/webot.js")
+          ? "source"
+          : "sea"
+      );
     const websocketStatuses = new Map(
       this.padClients.map((client) => [
         client.source.id,
@@ -287,7 +294,7 @@ export class WebotApplication {
       service: "webot",
       version: process.env.WEBOT_VERSION || WEBOT_VERSION,
       runtime: {
-        mode: process.env.WEBOT_RUNTIME_MODE || "node",
+        mode: runtimeMode,
         sourceRevision: process.env.WEBOT_SOURCE_REVISION || "",
       },
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),

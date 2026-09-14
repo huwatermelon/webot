@@ -1,10 +1,13 @@
 import crypto from "node:crypto";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import { sourceForMessage } from "../ingress-sources.js";
 import { normalizePadEnvelope } from "../normalize.js";
 
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
+const MAX_VOICE_BYTES = 5 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set([
   ".avif",
   ".bmp",
@@ -15,8 +18,18 @@ const IMAGE_EXTENSIONS = new Set([
   ".png",
   ".webp",
 ]);
+const AUDIO_FORMATS = new Map([
+  [".amr", 0],
+  [".spx", 1],
+  [".speex", 1],
+  [".mp3", 2],
+  [".wav", 3],
+  [".wave", 3],
+  [".silk", 4],
+]);
 const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS = 15_000;
 const WEBSOCKET_OPEN = 1;
+const execFileAsync = promisify(execFile);
 
 function tokenHeaders(token) {
   return {
@@ -36,6 +49,57 @@ function padSucceeded(response, body) {
     body.Data?.BaseResponse?.Ret;
   if (baseRet != null && Number(baseRet) !== 0) return false;
   return true;
+}
+
+function padFailureDetail(body) {
+  return String(
+    body?.error ||
+    body?.message ||
+    body?.Message ||
+    body?.msg ||
+    "",
+  ).trim();
+}
+
+async function probeAudioDurationMs(filePath, artifact = {}) {
+  const supplied = Number(artifact.durationMs || artifact.duration_ms || 0);
+  if (supplied > 0 && supplied <= 600_000) return Math.ceil(supplied);
+
+  const candidates = [
+    process.env.WEBOT_FFPROBE_BIN,
+    "/opt/homebrew/bin/ffprobe",
+    "/usr/local/bin/ffprobe",
+    "ffprobe",
+  ].filter((candidate, index, values) =>
+    candidate && values.indexOf(candidate) === index
+  );
+  let lastError;
+  for (const candidate of candidates) {
+    try {
+      const { stdout } = await execFileAsync(candidate, [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        filePath,
+      ], {
+        timeout: 10_000,
+        maxBuffer: 16 * 1024,
+      });
+      const durationMs = Math.ceil(Number.parseFloat(stdout) * 1000);
+      if (durationMs > 0 && durationMs <= 600_000) return durationMs;
+      lastError = new Error("audio duration is outside the WeChat voice limit");
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(
+    `cannot determine audio duration for WeChat voice delivery: ${
+      lastError?.message || "ffprobe unavailable"
+    }`,
+  );
 }
 
 function stripAiReplyPrefix(text) {
@@ -83,7 +147,7 @@ export class PadTransport {
     return source;
   }
 
-  async request(path, body, message = {}) {
+  async request(path, body, message = {}, options = {}) {
     const source = this.source(message);
     if (this.outboundMode !== "live") {
       this.logger.info("pad outbound dry-run", {
@@ -110,12 +174,23 @@ export class PadTransport {
         method: "POST",
         headers: tokenHeaders(source.accessToken),
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(options.timeoutMs || 30_000),
       },
     );
-    const result = await response.json().catch(() => ({}));
+    const raw = await response.text();
+    let result = {};
+    try {
+      result = JSON.parse(raw);
+    } catch {
+      result = {};
+    }
     if (!padSucceeded(response, result)) {
-      throw new Error(`Pad send failed (${response.status})`);
+      const detail = padFailureDetail(result);
+      throw new Error(
+        `Pad send failed for ${path} (${response.status})${
+          detail ? `: ${detail}` : ""
+        }`,
+      );
     }
     return { ok: true, result };
   }
@@ -163,23 +238,52 @@ export class PadTransport {
       String(artifact.kind || "").toLowerCase() === "image" ||
       String(artifact.mime || "").toLowerCase().startsWith("image/") ||
       IMAGE_EXTENSIONS.has(extension);
+    const audioFormat = AUDIO_FORMATS.get(extension);
+    const isAudio =
+      audioFormat != null &&
+      (
+        String(artifact.kind || "").toLowerCase() === "audio" ||
+        String(artifact.mime || "").toLowerCase().startsWith("audio/") ||
+        AUDIO_FORMATS.has(extension)
+      );
     const to = message.replyTarget || message.chatId;
     if (isImage) {
-      return this.request("/Msg/UploadImg", {
-        ToWxid: to,
-        Base64: data.toString("base64"),
+      return this.request("/v1/messages/send-image", {
+        to,
+        data_base64: data.toString("base64"),
       }, message);
+    }
+    if (isAudio) {
+      if (stat.size > MAX_VOICE_BYTES) {
+        throw new Error("WeChat voice attachment must be at most 5 MiB");
+      }
+      const durationMs = await probeAudioDurationMs(filePath, artifact);
+      return this.request("/v1/messages/send-voice", {
+        to,
+        data_base64: data.toString("base64"),
+        duration_ms: durationMs,
+        format: audioFormat,
+      }, message, { timeoutMs: 180_000 });
     }
     if (!this.config.requireWriteConfirmation) {
       throw new Error(
         "WeChat file cards require the confirmed-write Pad API",
       );
     }
-    return this.request("/Msg/SendFile", {
-      ToWxid: to,
-      FileName: filename,
-      Base64: data.toString("base64"),
-    }, message);
+    try {
+      return await this.request("/Msg/SendFile", {
+        ToWxid: to,
+        FileName: filename,
+        Base64: data.toString("base64"),
+      }, message, { timeoutMs: 180_000 });
+    } catch (error) {
+      if (/\(404\)/.test(String(error.message || error))) {
+        throw new Error(
+          "Pad gateway does not expose WeChat file-card delivery",
+        );
+      }
+      throw error;
+    }
   }
 }
 

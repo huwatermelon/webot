@@ -529,10 +529,17 @@ function renderAssistant() {
 function renderRelease() {
   const codex = status.codex || {};
   const effective = codex.effective || {};
+  const sourceMode = status.runtime?.mode === "source";
+  const runtimeLabel = sourceMode ? "源码" : "单文件";
+  const runtimeDetail = sourceMode
+    ? "稳定 Node 进程直接加载仓库代码"
+    : "Node SEA 可执行文件";
   content.innerHTML = `
     <div class="section">
       <div class="section-head"><div><h2>运行信息</h2><p>本机 Webot 服务</p></div></div>
       <div class="release-row"><span>版本</span><strong>${escapeHtml(status.version)}</strong></div>
+      <div class="release-row"><span>运行方式</span><strong>${runtimeLabel}</strong></div>
+      ${sourceMode ? `<div class="release-row"><span>源码版本</span><code>${escapeHtml(status.runtime?.sourceRevision || "unknown")}</code></div>` : ""}
       <div class="release-row"><span>监听地址</span><code>http://127.0.0.1:18120</code></div>
       <div class="release-row"><span>数据目录</span><code>${escapeHtml(status.dataDir)}</code></div>
       <div class="release-row"><span>配置文件</span><code>${escapeHtml(status.settingsFile)}</code></div>
@@ -544,11 +551,11 @@ function renderRelease() {
       <div class="release-row"><span>Reasoning / Tier</span><strong>${escapeHtml(effective.reasoningEffort || "默认")} / ${escapeHtml(effective.serviceTier || "默认")}</strong></div>
     </div>
     <div class="section">
-      <div class="section-head"><div><h2>发布形态</h2><p>当前平台单文件运行包</p></div></div>
+      <div class="section-head"><div><h2>发布形态</h2><p>当前服务实际加载方式</p></div></div>
       <div class="metric-grid">
-        <div class="metric"><div class="metric-top"><span>服务程序</span><i data-lucide="package-check"></i></div><strong>单文件</strong><small>Node SEA 可执行文件</small></div>
+        <div class="metric"><div class="metric-top"><span>服务程序</span><i data-lucide="package-check"></i></div><strong>${runtimeLabel}</strong><small>${runtimeDetail}</small></div>
         <div class="metric"><div class="metric-top"><span>配置与会话</span><i data-lucide="database"></i></div><strong>外置</strong><small>用户数据目录独立保存</small></div>
-        <div class="metric"><div class="metric-top"><span>源码</span><i data-lucide="shield-check"></i></div><strong>不随包</strong><small>发布包仅含程序与文档</small></div>
+        <div class="metric"><div class="metric-top"><span>代码更新</span><i data-lucide="shield-check"></i></div><strong>${sourceMode ? "重启生效" : "重新打包"}</strong><small>${sourceMode ? "无需构建或签名" : "构建新的已签名程序"}</small></div>
       </div>
     </div>`;
 }

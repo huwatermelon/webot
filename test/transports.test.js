@@ -91,11 +91,13 @@ test("Pad transport sends the expected text contract", async (context) => {
   assert.match(call.body.request_id, /^[0-9a-f-]{36}$/);
 });
 
-test("Pad transport sends images as image cards and videos as file cards", async (context) => {
+test("Pad transport sends images, audio, and generic file cards", async (context) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-files-"));
   const image = path.join(directory, "cover.png");
+  const audio = path.join(directory, "voice.mp3");
   const video = path.join(directory, "clip.mp4");
   await fs.writeFile(image, "image-bytes");
+  await fs.writeFile(audio, "audio-bytes");
   await fs.writeFile(video, "video-bytes");
   const calls = [];
   context.mock.method(globalThis, "fetch", async (url, options) => {
@@ -115,21 +117,57 @@ test("Pad transport sends images as image cards and videos as file cards", async
 
   await transport.sendArtifact(target, { path: image, kind: "image" });
   await transport.sendArtifact(target, {
+    path: audio,
+    filename: "voice.mp3",
+    kind: "file",
+    mime: "audio/mpeg",
+    durationMs: 12_345,
+  });
+  await transport.sendArtifact(target, {
     path: video,
     filename: "holiday.mp4",
     kind: "file",
     mime: "video/mp4",
   });
 
-  assert.equal(calls[0].url, "http://pad.local/api/Msg/UploadImg");
-  assert.equal(calls[0].body.ToWxid, "wxid_peer");
-  assert.equal(calls[1].url, "http://pad.local/api/Msg/SendFile");
-  assert.equal(calls[1].body.FileName, "holiday.mp4");
+  assert.equal(calls[0].url, "http://pad.local/api/v1/messages/send-image");
+  assert.equal(calls[0].body.to, "wxid_peer");
+  assert.equal(calls[1].url, "http://pad.local/api/v1/messages/send-voice");
+  assert.equal(calls[1].body.duration_ms, 12_345);
+  assert.equal(calls[1].body.format, 2);
   assert.equal(
-    Buffer.from(calls[1].body.Base64, "base64").toString(),
+    Buffer.from(calls[1].body.data_base64, "base64").toString(),
+    "audio-bytes",
+  );
+  assert.equal(calls[2].url, "http://pad.local/api/Msg/SendFile");
+  assert.equal(calls[2].body.FileName, "holiday.mp4");
+  assert.equal(
+    Buffer.from(calls[2].body.Base64, "base64").toString(),
     "video-bytes",
   );
-  assert.equal(calls[1].body.confirm, true);
+  assert.equal(calls[2].body.confirm, true);
+});
+
+test("Pad transport reports a missing file-card capability", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-files-"));
+  const file = path.join(directory, "report.pdf");
+  await fs.writeFile(file, "report");
+  context.mock.method(globalThis, "fetch", async () =>
+    new Response("404 page not found", { status: 404 })
+  );
+  const transport = new PadTransport({
+    apiUrl: "http://pad.local/api",
+    accessToken: "test-token",
+    requireWriteConfirmation: true,
+  }, "live");
+
+  await assert.rejects(
+    transport.sendArtifact(
+      { chatId: "wxid_peer" },
+      { path: file, mime: "application/pdf" },
+    ),
+    /does not expose WeChat file-card delivery/,
+  );
 });
 
 test("Pad transport rejects uppercase API failures", async (context) => {

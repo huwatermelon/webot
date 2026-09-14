@@ -199,13 +199,59 @@ test("persists and sends owner attachments with the draft", async () => {
 
   await manager.sendDraft(received.caseId, draft.id);
   assert.deepEqual(sent, [
-    { type: "text", text: "视频发你了。" },
     {
       type: "artifact",
       value: { path: artifact, filename: "answer.mp4", kind: "file" },
     },
+    { type: "text", text: "视频发你了。" },
   ]);
   assert.equal(caseStore.detail(received.caseId).drafts[0].outbound.artifacts.length, 1);
+  caseStore.close();
+});
+
+test("does not send completion text before attachments succeed", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-artifact-"));
+  const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
+  const received = caseStore.ingest(message("artifact-failure"));
+  const draftId = caseStore.addDraft(
+    received.caseId,
+    "文件发你了。",
+    "test-model",
+    {
+      triggerMessageId: received.messageRow,
+      inputCutoffMessageId: received.messageRow,
+      artifacts: [{ path: path.join(directory, "missing.mp3") }],
+    },
+  );
+  let textSent = false;
+  const manager = new CaseManager({
+    config: {
+      assistant: { mode: "echo", llmModel: "" },
+      caseManagement: { autoRun: false, autoSend: false, workerConcurrency: 1 },
+    },
+    provider: {},
+    sessionStore: new SessionStore(path.join(directory, "sessions"), 4),
+    caseStore,
+    transports: {
+      pad: {
+        async send() {
+          textSent = true;
+          return { ok: true };
+        },
+        async sendArtifact() {
+          throw new Error("attachment failed");
+        },
+      },
+    },
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  await assert.rejects(
+    manager.sendDraft(received.caseId, draftId),
+    /attachment failed/,
+  );
+  assert.equal(textSent, false);
+  assert.equal(caseStore.draft(received.caseId, draftId).status, "draft");
   caseStore.close();
 });
 
