@@ -1,6 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  activeSession,
+  activateSession,
+  createSession,
+  deleteSession,
+  ensureSessionScope,
+  installNamedSessionSchema,
+  listSessions,
+  sessionByName,
+  sessionForTarget,
+} from "./named-sessions.js";
 
 function json(value, fallback = null) {
   try {
@@ -112,6 +123,7 @@ export class CaseStore {
         updated_at INTEGER NOT NULL
       );
     `);
+    installNamedSessionSchema(this.db);
     ensureColumn(
       this.db,
       "worker_sessions",
@@ -242,8 +254,46 @@ export class CaseStore {
     this.db.prepare("DELETE FROM runtime_settings WHERE key=?").run(String(key));
   }
 
-  ingest(message, text = message.text) {
-    const caseId = caseIdFor(message);
+  ensureSessionScope(scopeCaseId) {
+    return ensureSessionScope(this.db, scopeCaseId);
+  }
+
+  activeSession(scopeCaseId) {
+    return activeSession(this.db, scopeCaseId);
+  }
+
+  listSessions(scopeCaseId) {
+    ensureSessionScope(this.db, scopeCaseId);
+    return listSessions(this.db, scopeCaseId);
+  }
+
+  sessionByName(scopeCaseId, name) {
+    ensureSessionScope(this.db, scopeCaseId);
+    return sessionByName(this.db, scopeCaseId, name);
+  }
+
+  sessionForTarget(caseId) {
+    return sessionForTarget(this.db, caseId);
+  }
+
+  createSession(scopeCaseId, name) {
+    return createSession(this.db, scopeCaseId, name);
+  }
+
+  activateSession(scopeCaseId, name) {
+    return activateSession(this.db, scopeCaseId, name);
+  }
+
+  deleteSession(scopeCaseId, name) {
+    return deleteSession(this.db, scopeCaseId, name);
+  }
+
+  ingest(message, text = message.text, options = {}) {
+    const scopeCaseId = caseIdFor(message);
+    const assignedSession = options.useActiveSession
+      ? ensureSessionScope(this.db, scopeCaseId)
+      : null;
+    const caseId = assignedSession?.target_case_id || scopeCaseId;
     const createdAt = now();
     const result = this.db.prepare(`
       INSERT OR IGNORE INTO messages(
@@ -265,12 +315,30 @@ export class CaseStore {
       JSON.stringify({ ...message, text: String(text || "") }),
       createdAt,
     );
-    if (!result.changes) return { inserted: false, caseId };
+    if (!result.changes) {
+      const existing = this.db.prepare(`
+        SELECT id, case_id FROM messages
+        WHERE source_id=? AND message_id=?
+        LIMIT 1
+      `).get(
+        String(message.sourceId || "default"),
+        String(message.messageId),
+      );
+      return {
+        inserted: false,
+        caseId: existing?.case_id || caseId,
+        scopeCaseId,
+        messageRow: Number(existing?.id || 0),
+      };
+    }
 
     const messageRow = Number(result.lastInsertRowid);
-    const title =
+    const baseTitle =
       String(message.senderName || "").trim() ||
       String(message.chatId || message.senderId || "微信会话");
+    const title = assignedSession && assignedSession.session_id !== "main"
+      ? `${baseTitle} / ${assignedSession.name}`
+      : baseTitle;
     this.db.prepare(`
       INSERT INTO cases(
         case_id, source_id, source_name, chat_type, chat_id, title,
@@ -298,7 +366,7 @@ export class CaseStore {
       createdAt,
       createdAt,
     );
-    return { inserted: true, caseId, messageRow };
+    return { inserted: true, caseId, scopeCaseId, messageRow };
   }
 
   listCases(limit = 100) {

@@ -54,12 +54,14 @@ export class CaseManager {
     const decision = acceptedMessage(message, this.config);
     if (!decision.accepted) return decision;
     const clean = { ...message, text: decision.text || message.text };
-    const ingested = this.caseStore.ingest(clean, clean.text);
+    const owner = this.requesterAccess(clean) === "owner";
+    const command = owner ? parseControlCommand(clean.text) : null;
+    const ingested = this.caseStore.ingest(clean, clean.text, {
+      useActiveSession: owner,
+    });
     if (!ingested.inserted) {
       return { accepted: false, reason: "duplicate", caseId: ingested.caseId };
     }
-    const owner = this.requesterAccess(clean) === "owner";
-    const command = owner ? parseControlCommand(clean.text) : null;
     if (command) {
       let stopped = false;
       if (command.type === "stop") stopped = this.stop(ingested.caseId);
@@ -68,6 +70,7 @@ export class CaseManager {
       const result = await applyControlCommand({
         command,
         caseId: ingested.caseId,
+        scopeCaseId: ingested.scopeCaseId,
         caseStore: this.caseStore,
         sessionStore: this.sessionStore,
         config: this.config.assistant,

@@ -2,6 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { codexRuntimeStatus } from "./codex-provider.js";
+import {
+  normalizeSessionName,
+  parseSessionCommand,
+  validSessionName,
+} from "./named-sessions.js";
 
 const EFFORTS = Object.freeze(["low", "medium", "high", "xhigh", "max", "ultra"]);
 
@@ -43,6 +48,8 @@ export function availableModels(config = {}, env = process.env) {
 export function parseControlCommand(value) {
   const text = clean(value);
   if (!text.startsWith("/")) return null;
+  const session = parseSessionCommand(text);
+  if (session) return session;
   if (/^\/models\s*$/i.test(text) || /^\/model\s+list\s*$/i.test(text)) {
     return { type: "model", action: "list" };
   }
@@ -106,6 +113,7 @@ function effectiveRuntime(caseStore, caseId, config, env) {
 export async function applyControlCommand({
   command,
   caseId,
+  scopeCaseId = caseId,
   caseStore,
   sessionStore,
   config,
@@ -113,6 +121,81 @@ export async function applyControlCommand({
   stopped = false,
 }) {
   const runtime = effectiveRuntime(caseStore, caseId, config, env);
+  if (command.type === "session") {
+    const current = caseStore.ensureSessionScope(scopeCaseId);
+    if (command.action === "invalid") {
+      return {
+        text:
+          "命令格式不对。使用 /session new <名称>、/session <名称>、"
+          + "/session delete <名称> 或 /session list。",
+      };
+    }
+    if (command.action === "show") {
+      return {
+        text:
+          `当前 session：${current.name}。\n`
+          + "新建：/session new <名称>；切换：/session <名称>；"
+          + "删除：/session delete <名称>；列表：/session list；"
+          + "切回默认：/session main。",
+      };
+    }
+    if (command.action === "list") {
+      const sessions = caseStore.listSessions(scopeCaseId);
+      const names = sessions
+        .map((item) => `${item.is_active ? "*" : "-"} ${item.name}`)
+        .join("\n");
+      return { text: `Sessions：\n${names}\n\n切回默认：/session main` };
+    }
+    if (command.action === "new") {
+      try {
+        const created = caseStore.createSession(scopeCaseId, command.name);
+        return {
+          text:
+            `已新建并切换到 session「${created.name}」。`
+            + "该 session 的上下文、Codex session、模型和 effort 均独立。",
+        };
+      } catch (error) {
+        return { text: `${error.message}。用 /session list 查看现有 session。` };
+      }
+    }
+    if (command.action === "delete") {
+      const name = normalizeSessionName(command.name);
+      if (!validSessionName(name)) {
+        return {
+          text: "请指定要删除的 session，例如 /session delete project-a。",
+        };
+      }
+      const deleted = caseStore.deleteSession(scopeCaseId, name);
+      if (deleted.reason === "not-found") {
+        return { text: `找不到 session「${name}」。用 /session list 查看。` };
+      }
+      if (deleted.reason === "main") {
+        return { text: "默认 session「main」不能删除。" };
+      }
+      if (deleted.reason === "active") {
+        return {
+          text: `不能删除当前 session「${deleted.session.name}」，请先切换到其他 session。`,
+        };
+      }
+      return {
+        text: `已删除 session「${deleted.session.name}」，历史记录仍保存在本地。`,
+      };
+    }
+    const name = normalizeSessionName(command.name);
+    if (!validSessionName(name)) {
+      return { text: "请指定要切换的 session，例如 /session main。" };
+    }
+    const selected = caseStore.activateSession(scopeCaseId, name);
+    if (!selected) {
+      return { text: `找不到 session「${name}」。用 /session list 查看。` };
+    }
+    return {
+      text: selected.session_id === "main"
+        ? "已切回默认 session「main」。"
+        : `已切换到 session「${selected.name}」。`,
+    };
+  }
+
   if (command.type === "model") {
     if (command.action === "list") {
       const models = availableModels(config, env);
@@ -187,9 +270,11 @@ export async function applyControlCommand({
   }
 
   if (command.type === "status") {
+    const session = caseStore.sessionForTarget(caseId);
     return {
       text:
-        `当前模型：${runtime.model}（${runtime.modelSource}）\n`
+        `当前 session：${session?.name || "main"}\n`
+        + `当前模型：${runtime.model}（${runtime.modelSource}）\n`
         + `Reasoning：${runtime.reasoningEffort}（${runtime.effortSource}）\n`
         + `Service tier：${runtime.serviceTier}`,
     };
@@ -197,7 +282,10 @@ export async function applyControlCommand({
 
   return {
     text:
-      "可用命令：/models、/model [模型|default]、/effort [级别|default]、"
-      + "/status、/clear、/stop。也可用 /model <模型> <任务> 直接指定下一项任务。",
+      "会话：/session、/session list、/session new <名称>、"
+      + "/session <名称>、/session delete <名称>。\n"
+      + "运行：/models、/model [模型|default]、/effort [级别|default]、"
+      + "/status、/clear、/stop。\n"
+      + "也可用 /model <模型> <任务> 直接指定下一项任务。",
   };
 }

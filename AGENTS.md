@@ -42,6 +42,10 @@ in the local Webot data directory and must never be committed.
 
 ## Development
 
+- Named sessions, persistent Codex continuation, owner control commands,
+  WeChat ingress/egress, attachment delivery, case scheduling, and guarded
+  worker draining are generic framework capabilities. Privacy or
+  organization-specific cleanup must not remove them.
 - Run `npm run verify` after source changes.
 - Keep runtime databases, messages, logs, private configuration, credentials,
   generated media, and build output out of Git.

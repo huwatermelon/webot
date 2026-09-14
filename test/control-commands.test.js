@@ -30,6 +30,21 @@ test("parses stable owner control commands", () => {
     type: "clear",
     action: "reset",
   });
+  assert.deepEqual(parseControlCommand("/session list"), {
+    type: "session",
+    action: "list",
+    name: "",
+  });
+  assert.deepEqual(parseControlCommand("/session new project-a"), {
+    type: "session",
+    action: "new",
+    name: "project-a",
+  });
+  assert.deepEqual(parseControlCommand("/session main"), {
+    type: "session",
+    action: "use",
+    name: "main",
+  });
   assert.equal(parseControlCommand("/unknown"), null);
 });
 
@@ -84,5 +99,76 @@ test("applies model and effort overrides without invoking a provider", async () 
     reasoningEffort: "",
   });
   assert.deepEqual(await sessionStore.history("case-1"), []);
+  caseStore.close();
+});
+
+test("creates, switches, lists, and deletes isolated named sessions", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-session-"));
+  const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
+  const sessionStore = new SessionStore(path.join(directory, "sessions"), 4);
+  const common = {
+    caseStore,
+    sessionStore,
+    config: {},
+    scopeCaseId: "wechat:small:self-pair:owner",
+  };
+
+  const created = await applyControlCommand({
+    ...common,
+    caseId: common.scopeCaseId,
+    command: parseControlCommand("/session new project-a"),
+  });
+  assert.match(created.text, /已新建并切换/);
+  const project = caseStore.activeSession(common.scopeCaseId);
+  assert.equal(project.name, "project-a");
+  assert.notEqual(project.target_case_id, common.scopeCaseId);
+  caseStore.setRuntimeSetting(
+    `assistant_effort:${project.target_case_id}`,
+    "low",
+  );
+  assert.equal(
+    runtimeOverrides(caseStore, project.target_case_id).reasoningEffort,
+    "low",
+  );
+  assert.equal(
+    runtimeOverrides(caseStore, common.scopeCaseId).reasoningEffort,
+    "",
+  );
+
+  const listed = await applyControlCommand({
+    ...common,
+    caseId: project.target_case_id,
+    command: parseControlCommand("/session list"),
+  });
+  assert.match(listed.text, /\* project-a/);
+  assert.match(listed.text, /- main/);
+
+  const activeDelete = await applyControlCommand({
+    ...common,
+    caseId: project.target_case_id,
+    command: parseControlCommand("/session delete project-a"),
+  });
+  assert.match(activeDelete.text, /不能删除当前/);
+
+  await applyControlCommand({
+    ...common,
+    caseId: project.target_case_id,
+    command: parseControlCommand("/session main"),
+  });
+  assert.equal(
+    caseStore.activeSession(common.scopeCaseId).target_case_id,
+    common.scopeCaseId,
+  );
+
+  const deleted = await applyControlCommand({
+    ...common,
+    caseId: common.scopeCaseId,
+    command: parseControlCommand("/session delete project-a"),
+  });
+  assert.match(deleted.text, /已删除/);
+  assert.deepEqual(
+    caseStore.listSessions(common.scopeCaseId).map((row) => row.name),
+    ["main"],
+  );
   caseStore.close();
 });

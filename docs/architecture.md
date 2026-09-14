@@ -5,6 +5,8 @@
 ```text
 gateway WebSocket -> normalize -> policy -> SQLite message
                                       |
+                         owner named-session routing
+                                      |
                                       v
                                     Case
                                       |
@@ -49,7 +51,10 @@ in `webot.sqlite`. Bounded assistant history remains in the session directory.
 - Optional chat and sender allowlists narrow accepted traffic.
 - A Case never runs two workers concurrently; new inbound during a run schedules
   one follow-up pass over the latest persisted context.
-- Every accepted message updates a stable account-scoped Case.
+- Every accepted message updates a stable account-scoped Case. Owner-created
+  named sessions route subsequent messages into independent child Cases.
+- Named sessions isolate bounded history, Codex continuation, model selection,
+  and reasoning effort while keeping all metadata in local SQLite state.
 - Worker execution and draft sending are separate persisted stages.
 - Workers can be paused globally, rerun per Case, or stopped while active.
 - Drafts can be sent automatically or reviewed and sent from the Case console.

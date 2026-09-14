@@ -6,6 +6,7 @@ message ingress and egress.
 It provides:
 
 - Isolated cases and persistent Codex sessions for each chat.
+- Named, isolated owner sessions controlled with `/session` commands.
 - Multi-account WeChat gateway connections.
 - Automatic or reviewed draft replies.
 - Image cards and confirmed file-card delivery for requested artifacts.
@@ -29,6 +30,11 @@ outside the source tree in the local Webot data directory. Configure gateway
 accounts, assistant providers, reply policy, and knowledge from the console.
 New installations start in dry-run mode so outbound messages are not sent until
 live mode is explicitly enabled.
+
+Owner control commands include `/session`, `/session list`,
+`/session new <name>`, `/session <name>`, `/session delete <name>`,
+`/models`, `/model`, `/effort`, `/status`, `/clear`, and `/stop`. Named
+session metadata and conversation state remain in the local data directory.
 
 ## WeChat Gateway
 

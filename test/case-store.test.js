@@ -759,3 +759,104 @@ test("handles owner slash commands locally and sends exactly one reply", async (
   assert.equal(caseStore.detail(received.caseId).drafts.length, 1);
   caseStore.close();
 });
+
+test("routes named sessions to independent worker and history state", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-named-"));
+  const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
+  const sessionStore = new SessionStore(path.join(directory, "sessions"), 4);
+  const providerCases = [];
+  const sent = [];
+  const manager = new CaseManager({
+    config: {
+      assistant: { mode: "codex", codexModel: "gpt-test" },
+      caseManagement: {
+        autoRun: true,
+        autoSend: true,
+        ownerIntermediateItems: false,
+        workerConcurrency: 1,
+      },
+      pad: {
+        sources: [{
+          id: "small",
+          strictPolicy: true,
+          allowSelf: false,
+          selfChatPeers: new Set(["owner_wxid"]),
+          acceptSelfChatPeerMessages: true,
+          allowedChatIds: new Set(),
+          allowedSenderIds: new Set(),
+          privateNicknameAllowlist: new Set(),
+          triggerKeywords: new Set(["webot"]),
+          botNames: new Set(["Webot"]),
+        }],
+      },
+      policy: {
+        blockedSenderIds: new Set(),
+        allowSelf: false,
+        allowedChatIds: new Set(),
+        allowedSenderIds: new Set(),
+        groupTriggers: new Set(["webot"]),
+      },
+      identity: { botNames: new Set(["Webot"]) },
+    },
+    provider: {
+      async reply({ caseId, history }) {
+        providerCases.push({ caseId, history });
+        return { text: `reply:${caseId}`, sessionId: `codex:${caseId}` };
+      },
+    },
+    sessionStore,
+    caseStore,
+    transports: {
+      pad: {
+        async send(_target, text) {
+          sent.push(text);
+          return { ok: true, dryRun: false };
+        },
+      },
+    },
+    requesterAccess: () => "owner",
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  const create = message("named-create");
+  create.text = "/session new project-a";
+  const created = await manager.receive(create);
+  assert.equal(created.command, "session");
+  assert.equal(sent.length, 1);
+
+  const projectTask = message("named-task");
+  projectTask.text = "project task";
+  const projectReceived = await manager.receive(projectTask);
+  assert.notEqual(projectReceived.caseId, created.caseId);
+  await waitFor(() => manager.status().active === 0);
+  assert.equal(providerCases[0].caseId, projectReceived.caseId);
+  assert.deepEqual(
+    providerCases[0].history.map(({ role, content }) => ({ role, content })),
+    [{ role: "user", content: "project task" }],
+  );
+
+  const list = message("named-list");
+  list.text = "/session list";
+  const listed = await manager.receive(list);
+  assert.equal(listed.caseId, projectReceived.caseId);
+  assert.match(sent.at(-1), /\* project-a/);
+
+  const main = message("named-main");
+  main.text = "/session main";
+  await manager.receive(main);
+  const mainTask = message("named-main-task");
+  mainTask.text = "main task";
+  const mainReceived = await manager.receive(mainTask);
+  assert.equal(mainReceived.caseId, created.caseId);
+  await waitFor(() => manager.status().active === 0);
+  assert.equal(providerCases[1].caseId, created.caseId);
+  assert.deepEqual(
+    providerCases[1].history.map(({ role, content }) => ({ role, content })),
+    [{ role: "user", content: "main task" }],
+  );
+  assert.notEqual(
+    caseStore.workerSession(created.caseId).codex_session_id,
+    caseStore.workerSession(projectReceived.caseId).codex_session_id,
+  );
+  caseStore.close();
+});
