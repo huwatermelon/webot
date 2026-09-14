@@ -32,8 +32,12 @@ export function availableModels(config = {}, env = process.env) {
       .filter(validModel)
       .filter((model) => !/^(?:gpt-image-|codex-auto-review$)/i.test(model));
   } catch {}
-  const current = codexRuntimeStatus(config, env).effective.model;
-  return unique([current, ...catalog]);
+  const runtime = codexRuntimeStatus(config, env);
+  return unique([
+    runtime.effective.model,
+    runtime.localConfig.model,
+    ...catalog,
+  ]);
 }
 
 export function parseControlCommand(value) {
