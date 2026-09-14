@@ -258,6 +258,7 @@ test("Pad WebSocket error does not recursively close the failing socket", (conte
       super();
       this.url = String(url);
       this.closeCalls = 0;
+      this.readyState = 0;
       FakeWebSocket.instances.push(this);
     }
 
@@ -285,9 +286,12 @@ test("Pad WebSocket error does not recursively close the failing socket", (conte
   socket.dispatchEvent(new Event("error"));
 
   assert.equal(client.status().lastError, "websocket error");
+  assert.equal(client.status().connectionState, "reconnecting");
+  assert.ok(client.timer);
+  assert.equal(client.socket, null);
   assert.equal(socket.closeCalls, 0);
   client.stop();
-  assert.equal(socket.closeCalls, 1);
+  assert.equal(socket.closeCalls, 0);
 });
 
 test("Pad WebSocket ignores stale socket events after reconnect", (context) => {
@@ -328,4 +332,82 @@ test("Pad WebSocket ignores stale socket events after reconnect", (context) => {
   assert.equal(client.socket, currentSocket);
   assert.equal(client.status().connected, true);
   client.stop();
+});
+
+test("Pad WebSocket retries a connection that never finishes opening", async (context) => {
+  class FakeWebSocket extends EventTarget {
+    static instances = [];
+
+    constructor() {
+      super();
+      this.readyState = 0;
+      FakeWebSocket.instances.push(this);
+    }
+
+    close() {}
+  }
+
+  replaceWebSocket(context, FakeWebSocket);
+  const client = new PadWebSocketClient(
+    {
+      id: "small-opt",
+      selfId: "wxid_small",
+      wsUrl: "ws://127.0.0.1:18102/ws/wxid_small",
+      accessToken: "test-token",
+      websocketConnectTimeoutMs: 1_000,
+    },
+    "wxid_small",
+    async () => {},
+    { info() {}, warn() {}, error() {} },
+  );
+
+  client.start();
+  assert.equal(FakeWebSocket.instances.length, 1);
+  await new Promise((resolve) => setTimeout(resolve, 1_050));
+
+  assert.equal(client.socket, null);
+  assert.equal(client.status().connectionState, "reconnecting");
+  assert.match(client.status().lastError, /timed out after 1000ms/);
+  assert.ok(client.timer);
+  client.stop();
+});
+
+test("Pad WebSocket closes an open socket during a clean stop", (context) => {
+  class FakeWebSocket extends EventTarget {
+    static instances = [];
+
+    constructor() {
+      super();
+      this.readyState = 0;
+      this.closeCalls = 0;
+      FakeWebSocket.instances.push(this);
+    }
+
+    close() {
+      this.closeCalls += 1;
+      this.readyState = 3;
+    }
+  }
+
+  replaceWebSocket(context, FakeWebSocket);
+  const client = new PadWebSocketClient(
+    {
+      id: "small-opt",
+      selfId: "wxid_small",
+      wsUrl: "ws://127.0.0.1:18102/ws/wxid_small",
+      accessToken: "test-token",
+    },
+    "wxid_small",
+    async () => {},
+    { info() {}, warn() {}, error() {} },
+  );
+
+  client.start();
+  const socket = FakeWebSocket.instances[0];
+  socket.readyState = 1;
+  socket.dispatchEvent(new Event("open"));
+  client.stop();
+
+  assert.equal(socket.closeCalls, 1);
+  assert.equal(client.status().connectionState, "stopped");
 });

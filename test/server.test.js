@@ -166,3 +166,35 @@ test("serves local AGENTS and knowledge editor APIs", async () => {
 
   await app.stop();
 });
+
+test("returns an unhealthy status when message ingress is degraded", async () => {
+  const application = {
+    config: loadConfig({
+      WEBOT_HOST: "127.0.0.1",
+      WEBOT_PORT: "0",
+    }),
+    status() {
+      return {
+        ok: false,
+        ingress: {
+          ready: false,
+          degradedSourceIds: ["small-opt"],
+        },
+      };
+    },
+    startConnectors() {},
+    stopConnectors() {},
+  };
+  const app = createServer({
+    application,
+    logger: { info() {}, warn() {}, error() {} },
+  });
+  const address = await app.start();
+  const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+  const health = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(health.ok, false);
+  assert.deepEqual(health.ingress.degradedSourceIds, ["small-opt"]);
+  await app.stop();
+});

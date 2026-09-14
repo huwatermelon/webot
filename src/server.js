@@ -53,16 +53,17 @@ export function createServer({
       const currentConfig = application?.config || config;
       const currentRuntime = application?.runtime || runtime;
       if (request.method === "GET" && url.pathname === "/health") {
+        const health = application?.status() || {
+          ok: true,
+          service: "webot",
+          uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
+          channels: [...currentConfig.channels],
+          outboundMode: currentConfig.outboundMode,
+        };
         respond(
           response,
-          200,
-          application?.status() || {
-            ok: true,
-            service: "webot",
-            uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
-            channels: [...currentConfig.channels],
-            outboundMode: currentConfig.outboundMode,
-          },
+          health.ok === false ? 503 : 200,
+          health,
         );
         return;
       }

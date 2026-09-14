@@ -256,8 +256,34 @@ export class WebotApplication {
         client.status(),
       ]),
     );
+    const padSources = this.config.pad.sources.map((source) => {
+      const websocket = websocketStatuses.get(source.id) || null;
+      const health = this.padStatuses.get(source.id) || null;
+      const ready = !source.enabled || Boolean(
+        websocket?.connected && health?.ready,
+      );
+      return {
+        id: source.id,
+        displayName: source.displayName,
+        selfId: source.selfId,
+        enabled: source.enabled,
+        ready,
+        credentialReady: Boolean(source.accessToken),
+        credentialSource: source.credentialSource,
+        inboundMessages: Number(this.padIngressCounts.get(source.id) || 0),
+        websocket,
+        health,
+      };
+    });
+    const enabledPadSources = this.config.channels.has("pad")
+      ? padSources.filter((source) => source.enabled)
+      : [];
+    const ingressReady = !this.config.channels.has("pad") || (
+      enabledPadSources.length > 0 &&
+      enabledPadSources.every((source) => source.ready)
+    );
     return {
-      ok: true,
+      ok: ingressReady,
       service: "webot",
       version: process.env.WEBOT_VERSION || WEBOT_VERSION,
       runtime: {
@@ -275,17 +301,17 @@ export class WebotApplication {
       knowledgeBase: this.knowledgeBase.status(),
       cases: this.caseStore.stats(),
       workers: this.caseManager.status(),
-      padSources: this.config.pad.sources.map((source) => ({
-        id: source.id,
-        displayName: source.displayName,
-        selfId: source.selfId,
-        enabled: source.enabled,
-        credentialReady: Boolean(source.accessToken),
-        credentialSource: source.credentialSource,
-        inboundMessages: Number(this.padIngressCounts.get(source.id) || 0),
-        websocket: websocketStatuses.get(source.id) || null,
-        health: this.padStatuses.get(source.id) || null,
-      })),
+      ingress: {
+        ready: ingressReady,
+        configuredSources: enabledPadSources.length,
+        connectedSources: enabledPadSources.filter(
+          (source) => source.ready,
+        ).length,
+        degradedSourceIds: enabledPadSources
+          .filter((source) => !source.ready)
+          .map((source) => source.id),
+      },
+      padSources,
     };
   }
 }
