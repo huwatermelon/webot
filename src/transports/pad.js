@@ -234,18 +234,15 @@ export class PadTransport {
       throw new Error("invalid WeChat attachment name");
     }
     const extension = path.extname(filename).toLowerCase();
+    const kind = String(artifact.kind || "").toLowerCase();
     const isImage =
-      String(artifact.kind || "").toLowerCase() === "image" ||
+      kind === "image" ||
       String(artifact.mime || "").toLowerCase().startsWith("image/") ||
       IMAGE_EXTENSIONS.has(extension);
     const audioFormat = AUDIO_FORMATS.get(extension);
     const isAudio =
       audioFormat != null &&
-      (
-        String(artifact.kind || "").toLowerCase() === "audio" ||
-        String(artifact.mime || "").toLowerCase().startsWith("audio/") ||
-        AUDIO_FORMATS.has(extension)
-      );
+      (kind === "audio" || kind === "voice");
     const to = message.replyTarget || message.chatId;
     if (isImage) {
       return this.request("/v1/messages/send-image", {
@@ -271,7 +268,7 @@ export class PadTransport {
       );
     }
     try {
-      return await this.request("/Msg/SendFile", {
+      return await this.request("/v1/messages/send-file", {
         ToWxid: to,
         FileName: filename,
         Base64: data.toString("base64"),

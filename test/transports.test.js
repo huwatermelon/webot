@@ -94,10 +94,12 @@ test("Pad transport sends the expected text contract", async (context) => {
 test("Pad transport sends images, audio, and generic file cards", async (context) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-files-"));
   const image = path.join(directory, "cover.png");
-  const audio = path.join(directory, "voice.mp3");
+  const audioFile = path.join(directory, "audio-file.mp3");
+  const voice = path.join(directory, "voice.mp3");
   const video = path.join(directory, "clip.mp4");
   await fs.writeFile(image, "image-bytes");
-  await fs.writeFile(audio, "audio-bytes");
+  await fs.writeFile(audioFile, "audio-file-bytes");
+  await fs.writeFile(voice, "voice-bytes");
   await fs.writeFile(video, "video-bytes");
   const calls = [];
   context.mock.method(globalThis, "fetch", async (url, options) => {
@@ -117,9 +119,15 @@ test("Pad transport sends images, audio, and generic file cards", async (context
 
   await transport.sendArtifact(target, { path: image, kind: "image" });
   await transport.sendArtifact(target, {
-    path: audio,
-    filename: "voice.mp3",
+    path: audioFile,
+    filename: "audio-file.mp3",
     kind: "file",
+    mime: "audio/mpeg",
+  });
+  await transport.sendArtifact(target, {
+    path: voice,
+    filename: "voice.mp3",
+    kind: "audio",
     mime: "audio/mpeg",
     durationMs: 12_345,
   });
@@ -132,20 +140,26 @@ test("Pad transport sends images, audio, and generic file cards", async (context
 
   assert.equal(calls[0].url, "http://pad.local/api/v1/messages/send-image");
   assert.equal(calls[0].body.to, "wxid_peer");
-  assert.equal(calls[1].url, "http://pad.local/api/v1/messages/send-voice");
-  assert.equal(calls[1].body.duration_ms, 12_345);
-  assert.equal(calls[1].body.format, 2);
+  assert.equal(calls[1].url, "http://pad.local/api/v1/messages/send-file");
+  assert.equal(calls[1].body.FileName, "audio-file.mp3");
   assert.equal(
-    Buffer.from(calls[1].body.data_base64, "base64").toString(),
-    "audio-bytes",
+    Buffer.from(calls[1].body.Base64, "base64").toString(),
+    "audio-file-bytes",
   );
-  assert.equal(calls[2].url, "http://pad.local/api/Msg/SendFile");
-  assert.equal(calls[2].body.FileName, "holiday.mp4");
+  assert.equal(calls[2].url, "http://pad.local/api/v1/messages/send-voice");
+  assert.equal(calls[2].body.duration_ms, 12_345);
+  assert.equal(calls[2].body.format, 2);
   assert.equal(
-    Buffer.from(calls[2].body.Base64, "base64").toString(),
+    Buffer.from(calls[2].body.data_base64, "base64").toString(),
+    "voice-bytes",
+  );
+  assert.equal(calls[3].url, "http://pad.local/api/v1/messages/send-file");
+  assert.equal(calls[3].body.FileName, "holiday.mp4");
+  assert.equal(
+    Buffer.from(calls[3].body.Base64, "base64").toString(),
     "video-bytes",
   );
-  assert.equal(calls[2].body.confirm, true);
+  assert.equal(calls[3].body.confirm, true);
 });
 
 test("Pad transport reports a missing file-card capability", async (context) => {
