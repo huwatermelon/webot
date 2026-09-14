@@ -16,6 +16,8 @@ APP_DIR="${WEBOT_DATA_DIR:-$HOME/Library/Application Support/Webot}"
 SETTINGS_FILE="${WEBOT_SETTINGS_FILE:-$APP_DIR/settings.json}"
 LOG_DIR="${WEBOT_LOG_DIR:-$HOME/Library/Logs/Webot}"
 WORKSPACE_DIR="$APP_DIR/workspace"
+LAUNCHER_DIR="$APP_DIR/bin"
+LAUNCHER="$LAUNCHER_DIR/webot-source-launcher.sh"
 REVISION_FILE="${WEBOT_SOURCE_REVISION_FILE:-$APP_DIR/source-revision}"
 LABEL="${WEBOT_SERVICE_LABEL:-com.webot.agent}"
 PLIST="${WEBOT_SERVICE_PLIST:-$HOME/Library/LaunchAgents/$LABEL.plist}"
@@ -23,24 +25,34 @@ SERVICE="gui/$(id -u)/$LABEL"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$APP_DIR/backups/$STAMP-source-install"
 CANDIDATE_PLIST="$HOME/Library/LaunchAgents/.$LABEL.candidate.$$.plist"
+CANDIDATE_LAUNCHER="$LAUNCHER_DIR/.webot-source-launcher.candidate.$$"
 CANDIDATE_REVISION="$APP_DIR/.source-revision.candidate.$$"
 REVISION="$(git -C "$REPO_DIR" rev-parse HEAD)"
 ACTIVATION_STARTED=0
 HAD_PLIST=0
+HAD_LAUNCHER=0
 HAD_REVISION=0
 
 mkdir -p \
   "$APP_DIR" \
   "$LOG_DIR" \
   "$WORKSPACE_DIR" \
+  "$LAUNCHER_DIR" \
   "$HOME/Library/LaunchAgents" \
   "$BACKUP_DIR"
-chmod 700 "$APP_DIR" "$LOG_DIR" "$WORKSPACE_DIR" "$BACKUP_DIR"
+chmod 700 \
+  "$APP_DIR" \
+  "$LOG_DIR" \
+  "$WORKSPACE_DIR" \
+  "$LAUNCHER_DIR" \
+  "$BACKUP_DIR"
 
 if [ ! -f "$SETTINGS_FILE" ]; then
   cp "$REPO_DIR/packaging/settings.example.json" "$SETTINGS_FILE"
 fi
 chmod 600 "$SETTINGS_FILE"
+cp "$REPO_DIR/scripts/run-source.sh" "$CANDIDATE_LAUNCHER"
+chmod 700 "$CANDIDATE_LAUNCHER"
 printf '%s\n' "$REVISION" >"$CANDIDATE_REVISION"
 chmod 600 "$CANDIDATE_REVISION"
 
@@ -54,7 +66,7 @@ cat >"$CANDIDATE_PLIST" <<EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/zsh</string>
-    <string>$REPO_DIR/scripts/run-source.sh</string>
+    <string>$LAUNCHER</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -97,6 +109,11 @@ if [ -f "$PLIST" ]; then
   chmod 600 "$BACKUP_DIR/$(basename "$PLIST")"
   HAD_PLIST=1
 fi
+if [ -f "$LAUNCHER" ]; then
+  cp "$LAUNCHER" "$BACKUP_DIR/webot-source-launcher.sh"
+  chmod 700 "$BACKUP_DIR/webot-source-launcher.sh"
+  HAD_LAUNCHER=1
+fi
 if [ -f "$REVISION_FILE" ]; then
   cp "$REVISION_FILE" "$BACKUP_DIR/source-revision"
   chmod 600 "$BACKUP_DIR/source-revision"
@@ -111,6 +128,12 @@ restore_previous() {
   else
     rm -f "$PLIST"
   fi
+  if [ "$HAD_LAUNCHER" -eq 1 ]; then
+    cp "$BACKUP_DIR/webot-source-launcher.sh" "$LAUNCHER"
+    chmod 700 "$LAUNCHER"
+  else
+    rm -f "$LAUNCHER"
+  fi
   if [ "$HAD_REVISION" -eq 1 ]; then
     cp "$BACKUP_DIR/source-revision" "$REVISION_FILE"
     chmod 600 "$REVISION_FILE"
@@ -124,7 +147,7 @@ restore_previous() {
 }
 
 cleanup() {
-  rm -f "$CANDIDATE_PLIST" "$CANDIDATE_REVISION"
+  rm -f "$CANDIDATE_PLIST" "$CANDIDATE_LAUNCHER" "$CANDIDATE_REVISION"
 }
 
 on_exit() {
@@ -166,7 +189,9 @@ fi
 ACTIVATION_STARTED=1
 /bin/launchctl bootout "$SERVICE" 2>/dev/null || true
 mv "$CANDIDATE_PLIST" "$PLIST"
+mv "$CANDIDATE_LAUNCHER" "$LAUNCHER"
 mv "$CANDIDATE_REVISION" "$REVISION_FILE"
+chmod 700 "$LAUNCHER"
 chmod 600 "$PLIST" "$REVISION_FILE"
 
 if ! /bin/launchctl bootstrap "gui/$(id -u)" "$PLIST"; then
