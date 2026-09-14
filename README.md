@@ -8,6 +8,7 @@ It provides:
 - Isolated cases and persistent Codex sessions for each chat.
 - Multi-account WeChat gateway connections.
 - Automatic or reviewed draft replies.
+- Image cards and confirmed file-card delivery for requested artifacts.
 - A local knowledge base with public and owner-only audiences.
 - A loopback-only administration console.
 

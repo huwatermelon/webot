@@ -16,6 +16,49 @@ function scalar(value) {
   return "";
 }
 
+function decodeXmlText(value) {
+  return String(value || "")
+    .replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, "$1")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&amp;", "&");
+}
+
+function xmlTag(xml, tag) {
+  const match = String(xml || "").match(
+    new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i"),
+  );
+  return match ? decodeXmlText(match[1]).trim() : "";
+}
+
+function padContent(message, rawContent) {
+  const messageType = Number(
+    scalar(message.MsgType ?? message.msg_type ?? message.type),
+  );
+  if (messageType !== 49 || !/<appmsg(?:\s|>)/i.test(rawContent)) {
+    return { text: rawContent, attachments: [] };
+  }
+  const appType = Number(xmlTag(rawContent, "type"));
+  if (appType !== 6) return { text: rawContent, attachments: [] };
+  const extension = xmlTag(rawContent, "fileext").replace(/^\./, "");
+  let filename = xmlTag(rawContent, "title") || "微信文件";
+  if (extension && !filename.toLowerCase().endsWith(`.${extension.toLowerCase()}`)) {
+    filename = `${filename}.${extension}`;
+  }
+  const size = Number(xmlTag(rawContent, "totallen")) || 0;
+  return {
+    text: `[文件] ${filename}${size ? ` (${size}B)` : ""}`,
+    attachments: [{
+      kind: "file",
+      filename,
+      size,
+      fileExtension: extension,
+    }],
+  };
+}
+
 function timestampMs(value) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return Date.now();
@@ -158,9 +201,10 @@ function normalizePadMessage(message, sourceValue) {
   const rawContent = scalar(
     message.Content ?? message.content ?? message.text ?? message.Text,
   );
+  const content = padContent(message, rawContent);
   const split = room
-    ? splitPadGroupContent(rawContent)
-    : { embeddedSender: "", text: rawContent };
+    ? splitPadGroupContent(content.text)
+    : { embeddedSender: "", text: content.text };
   const actualSender = scalar(
     message.ActualUserName ??
       message.actual_user_name ??
@@ -231,6 +275,7 @@ function normalizePadMessage(message, sourceValue) {
     exactSelfChat,
     replyTarget: room || peerId,
     text: split.text.trim(),
+    attachments: content.attachments,
     mentions: [
       ...new Set(
         [

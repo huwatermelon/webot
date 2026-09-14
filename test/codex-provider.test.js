@@ -7,6 +7,7 @@ import {
   buildCodexArgs,
   codexRuntimeStatus,
   createCodexProvider,
+  parseAssistantResult,
   parseCodexEvents,
 } from "../src/codex-provider.js";
 import {
@@ -32,6 +33,32 @@ test("parses a Codex session and usage from JSONL", () => {
     reasoningOutputTokens: 3,
   });
   assert.deepEqual(parsed.intermediateMessages, ["正在检查配置"]);
+});
+
+test("parses structured replies and attachment aliases", () => {
+  assert.deepEqual(
+    parseAssistantResult(JSON.stringify({
+      reply_text: "文件发你了。",
+      attachments: [{
+        path: "/tmp/demo.mp4",
+        filename: "demo.mp4",
+        kind: "file",
+      }],
+    })),
+    {
+      text: "文件发你了。",
+      artifacts: [{
+        path: "/tmp/demo.mp4",
+        filename: "demo.mp4",
+        kind: "file",
+        mime: "",
+      }],
+    },
+  );
+  assert.deepEqual(parseAssistantResult("普通回复"), {
+    text: "普通回复",
+    artifacts: [],
+  });
 });
 
 test("builds new and resume commands with editable Codex settings", async () => {
@@ -62,6 +89,10 @@ test("builds new and resume commands with editable Codex settings", async () => 
   assert.ok(
     fresh.some((item) =>
       item.includes("Never install, stop, restart, signal")),
+  );
+  assert.ok(
+    fresh.some((item) =>
+      item.includes("Never put a local file path")),
   );
 
   const resumed = buildCodexArgs(config, {

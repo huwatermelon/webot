@@ -119,3 +119,35 @@ test("normalizes top-level WeChatPad gateway events", () => {
   assert.equal(message.replyTarget, "owner_wxid");
   assert.equal(message.text, "webot ping");
 });
+
+test("normalizes appmsg type 6 as a WeChat file card", () => {
+  const [message] = normalizePadEnvelope({
+    NewMsgId: "file-message-1",
+    MsgType: 49,
+    FromUserName: "owner_wxid",
+    ToUserName: "wxid_small",
+    Content: [
+      "<msg><appmsg>",
+      "<title><![CDATA[holiday]]></title>",
+      "<type>6</type>",
+      "<appattach>",
+      "<totallen>6752808</totallen>",
+      "<fileext>mp4</fileext>",
+      "</appattach>",
+      "</appmsg></msg>",
+    ].join(""),
+  }, {
+    id: "small",
+    displayName: "小号",
+    selfId: "wxid_small",
+    selfChatPeers: new Set(["owner_wxid"]),
+  });
+
+  assert.equal(message.text, "[文件] holiday.mp4 (6752808B)");
+  assert.deepEqual(message.attachments, [{
+    kind: "file",
+    filename: "holiday.mp4",
+    size: 6752808,
+    fileExtension: "mp4",
+  }]);
+});

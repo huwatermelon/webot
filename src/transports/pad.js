@@ -1,6 +1,20 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { sourceForMessage } from "../ingress-sources.js";
 import { normalizePadEnvelope } from "../normalize.js";
+
+const MAX_FILE_BYTES = 64 * 1024 * 1024;
+const IMAGE_EXTENSIONS = new Set([
+  ".avif",
+  ".bmp",
+  ".gif",
+  ".heic",
+  ".jpeg",
+  ".jpg",
+  ".png",
+  ".webp",
+]);
 
 function tokenHeaders(token) {
   return {
@@ -119,6 +133,50 @@ export class PadTransport {
     return this.request("/v1/messages/send-image", {
       to: chatId,
       data_base64: base64,
+    }, message);
+  }
+
+  async sendArtifact(message, artifact = {}) {
+    const filePath = path.resolve(String(artifact.path || ""));
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile() || stat.size < 1 || stat.size > MAX_FILE_BYTES) {
+      throw new Error(
+        "WeChat attachment must be a nonempty regular file of at most 64 MiB",
+      );
+    }
+    const data = fs.readFileSync(filePath);
+    if (data.length !== stat.size) {
+      throw new Error("WeChat attachment changed size while reading");
+    }
+    const filename = path.basename(String(artifact.filename || filePath));
+    if (
+      !filename ||
+      Buffer.byteLength(filename) > 255 ||
+      /[\x00-\x1f\x7f]/.test(filename)
+    ) {
+      throw new Error("invalid WeChat attachment name");
+    }
+    const extension = path.extname(filename).toLowerCase();
+    const isImage =
+      String(artifact.kind || "").toLowerCase() === "image" ||
+      String(artifact.mime || "").toLowerCase().startsWith("image/") ||
+      IMAGE_EXTENSIONS.has(extension);
+    const to = message.replyTarget || message.chatId;
+    if (isImage) {
+      return this.request("/Msg/UploadImg", {
+        ToWxid: to,
+        Base64: data.toString("base64"),
+      }, message);
+    }
+    if (!this.config.requireWriteConfirmation) {
+      throw new Error(
+        "WeChat file cards require the confirmed-write Pad API",
+      );
+    }
+    return this.request("/Msg/SendFile", {
+      ToWxid: to,
+      FileName: filename,
+      Base64: data.toString("base64"),
     }, message);
   }
 }

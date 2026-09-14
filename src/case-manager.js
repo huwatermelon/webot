@@ -191,6 +191,18 @@ export class CaseManager {
         : providerResult;
       const reply = String(result?.text || "").trim();
       if (!reply) throw new Error("assistant returned no text");
+      const owner = this.requesterAccess(trigger.message) === "owner";
+      const artifacts = owner && Array.isArray(result?.artifacts)
+        ? result.artifacts
+        : [];
+      if (!owner && result?.artifacts?.length) {
+        this.caseStore.addProgress(
+          caseId,
+          session.run_count,
+          "已忽略非 owner 请求中的本地附件",
+          "warn",
+        );
+      }
       if (controller.signal.aborted) throw new Error("worker stopped");
       this.caseStore.recordProviderResult(caseId, result);
       const draftId = this.caseStore.addDraft(
@@ -203,6 +215,7 @@ export class CaseManager {
         {
           triggerMessageId: trigger.id,
           inputCutoffMessageId: cutoffMessageId,
+          artifacts,
         },
       );
       await this.sessionStore.append(caseId, "assistant", reply);
@@ -243,7 +256,24 @@ export class CaseManager {
     if (!target) throw new Error("case has no reply target");
     const transport = this.transports[target.message.transport];
     if (!transport) throw new Error("reply transport is unavailable");
-    const outbound = await transport.send(target.message, draft.text);
+    const textOutbound = await transport.send(target.message, draft.text);
+    const artifactOutbounds = [];
+    for (const artifact of draft.artifacts || []) {
+      if (typeof transport.sendArtifact !== "function") {
+        throw new Error("reply transport cannot send attachments");
+      }
+      artifactOutbounds.push(
+        await transport.sendArtifact(target.message, artifact),
+      );
+    }
+    const outbound = {
+      ok: true,
+      dryRun:
+        Boolean(textOutbound?.dryRun) &&
+        artifactOutbounds.every((item) => item?.dryRun),
+      text: textOutbound,
+      artifacts: artifactOutbounds,
+    };
     this.caseStore.markSent(caseId, draftId, outbound);
     this.caseStore.addProgress(
       caseId,

@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { HookTransport } from "../src/transports/hook.js";
 import {
   formatPadReplyText,
@@ -86,6 +89,47 @@ test("Pad transport sends the expected text contract", async (context) => {
   assert.equal(call.body.type, 1);
   assert.equal(call.body.confirm, true);
   assert.match(call.body.request_id, /^[0-9a-f-]{36}$/);
+});
+
+test("Pad transport sends images as image cards and videos as file cards", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-files-"));
+  const image = path.join(directory, "cover.png");
+  const video = path.join(directory, "clip.mp4");
+  await fs.writeFile(image, "image-bytes");
+  await fs.writeFile(video, "video-bytes");
+  const calls = [];
+  context.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    return Response.json({ Code: 0 });
+  });
+  const transport = new PadTransport({
+    apiUrl: "http://pad.local/api",
+    accessToken: "test-token",
+    requireWriteConfirmation: true,
+  }, "live");
+  const target = {
+    chatType: "private",
+    chatId: "wxid_peer",
+    replyTarget: "wxid_peer",
+  };
+
+  await transport.sendArtifact(target, { path: image, kind: "image" });
+  await transport.sendArtifact(target, {
+    path: video,
+    filename: "holiday.mp4",
+    kind: "file",
+    mime: "video/mp4",
+  });
+
+  assert.equal(calls[0].url, "http://pad.local/api/Msg/UploadImg");
+  assert.equal(calls[0].body.ToWxid, "wxid_peer");
+  assert.equal(calls[1].url, "http://pad.local/api/Msg/SendFile");
+  assert.equal(calls[1].body.FileName, "holiday.mp4");
+  assert.equal(
+    Buffer.from(calls[1].body.Base64, "base64").toString(),
+    "video-bytes",
+  );
+  assert.equal(calls[1].body.confirm, true);
 });
 
 test("Pad transport rejects uppercase API failures", async (context) => {

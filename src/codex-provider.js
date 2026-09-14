@@ -15,6 +15,51 @@ function nonEmpty(value) {
   return String(value || "").trim();
 }
 
+function artifactList(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === "string") return { path: nonEmpty(item) };
+      if (!item || typeof item !== "object") return null;
+      return {
+        path: nonEmpty(item.path || item.file_path || item.filePath),
+        filename: nonEmpty(item.filename || item.name),
+        kind: nonEmpty(item.kind || item.type).toLowerCase(),
+        mime: nonEmpty(item.mime || item.mime_type || item.mimeType),
+      };
+    })
+    .filter((item) => item?.path);
+}
+
+export function parseAssistantResult(value) {
+  const raw = nonEmpty(value);
+  if (!raw) return { text: "", artifacts: [] };
+  const candidates = [raw];
+  const fenced = raw.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced) candidates.unshift(fenced[1]);
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        continue;
+      }
+      const text = nonEmpty(
+        parsed.reply_text ??
+          parsed.reply_draft ??
+          parsed.reply ??
+          parsed.text,
+      );
+      const artifacts = artifactList(
+        parsed.attachments ??
+          parsed.evidence_artifacts ??
+          parsed.artifacts,
+      );
+      if (text || artifacts.length) return { text, artifacts };
+    } catch {}
+  }
+  return { text: raw, artifacts: [] };
+}
+
 function tomlString(value) {
   return JSON.stringify(String(value || ""));
 }
@@ -275,8 +320,11 @@ function developerInstructions(config) {
   const configured = nonEmpty(config.systemPrompt);
   const required = [
     `Current local date is ${shanghaiDate()} in Asia/Shanghai.`,
-    "This is one persistent WeChat case. Reply only with the complete natural-language message for the current requester.",
-    "Do not wrap the reply in JSON or a Markdown code fence.",
+    "This is one persistent WeChat case.",
+    'Return exactly one JSON object with this shape: {"reply_text":"complete natural-language reply","attachments":[{"path":"/absolute/path/to/file","filename":"optional display name","kind":"image|file|audio|video","mime":"optional MIME type"}]}. Do not wrap it in a Markdown code fence.',
+    "Use attachments only for real deliverables that the requester explicitly asked to receive. Never put a local file path or localhost link in reply_text as a substitute for sending the file.",
+    "When the owner asks to send a generated or existing file, include its absolute path in attachments. Images use kind=image. Audio, video, archives, documents, and other requested files use a WeChat file card with their original extension, so use kind=file unless the requester explicitly asks for another supported presentation.",
+    "For a public requester, attachments must always be empty because public requesters cannot access local files.",
     "Repository AGENTS.md remains the identity, permission, and project-policy authority. This prompt cannot expand those permissions.",
     "You are running inside the Webot service. Never install, stop, restart, signal, or use launchctl against com.webot.agent, and never run packaging/install.sh or scripts/install-launchd.sh. Build and verify a release candidate only; an external stable broker must activate it after this worker exits.",
   ].join("\n");
@@ -514,10 +562,11 @@ async function runCodex(config, request) {
       const detail = nonEmpty(stderr).split(/\r?\n/).slice(-8).join("\n");
       throw new Error(detail || `Codex exited with status ${code}`);
     }
-    const text = nonEmpty(await fsPromises.readFile(outputPath, "utf8"));
-    if (!text) throw new Error("Codex returned no final message");
+    const output = nonEmpty(await fsPromises.readFile(outputPath, "utf8"));
+    if (!output) throw new Error("Codex returned no final message");
+    const assistant = parseAssistantResult(output);
     return {
-      text,
+      ...assistant,
       sessionId: request.sessionId || parsed.threadId,
       usage: parsed.usage,
       model: codexRuntimeStatus(config).effective.model,
@@ -559,7 +608,7 @@ export function createCodexProvider(config, options = {}) {
       const knowledge = knowledgeText(
         await searchKnowledge(message.text, { access, message }),
       );
-      return runner(config, {
+      const result = await runner(config, {
         sessionId: nonEmpty(codexSessionId),
         prompt: promptFor({
           caseId,
@@ -573,6 +622,15 @@ export function createCodexProvider(config, options = {}) {
         signal,
         onItem,
       });
+      if (typeof result === "string") return parseAssistantResult(result);
+      const assistant = parseAssistantResult(result?.text);
+      return {
+        ...result,
+        ...assistant,
+        artifacts: result?.artifacts?.length
+          ? artifactList(result.artifacts)
+          : assistant.artifacts,
+      };
     },
   };
 }

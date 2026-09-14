@@ -127,6 +127,88 @@ test("persists a WeChat case, worker session, draft, and send result", async () 
   caseStore.close();
 });
 
+test("persists and sends owner attachments with the draft", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-artifact-"));
+  const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
+  const artifact = path.join(directory, "answer.mp4");
+  await fs.writeFile(artifact, "video");
+  const sent = [];
+  const config = {
+    assistant: { mode: "codex", llmModel: "" },
+    caseManagement: { autoRun: false, autoSend: false, workerConcurrency: 1 },
+    pad: {
+      sources: [{
+        id: "small",
+        strictPolicy: true,
+        allowSelf: false,
+        selfChatPeers: new Set(["owner_wxid"]),
+        acceptSelfChatPeerMessages: true,
+        allowedChatIds: new Set(),
+        allowedSenderIds: new Set(),
+        privateNicknameAllowlist: new Set(),
+        triggerKeywords: new Set(["webot"]),
+        botNames: new Set(["Webot"]),
+      }],
+    },
+    policy: {
+      blockedSenderIds: new Set(),
+      allowSelf: false,
+      allowedChatIds: new Set(),
+      allowedSenderIds: new Set(),
+      groupTriggers: new Set(["webot"]),
+    },
+    identity: { botNames: new Set(["Webot"]) },
+  };
+  const manager = new CaseManager({
+    config,
+    provider: {
+      async reply() {
+        return {
+          text: "视频发你了。",
+          artifacts: [{ path: artifact, filename: "answer.mp4", kind: "file" }],
+        };
+      },
+    },
+    sessionStore: new SessionStore(path.join(directory, "sessions"), 4),
+    caseStore,
+    transports: {
+      pad: {
+        async send(_target, text) {
+          sent.push({ type: "text", text });
+          return { ok: true, dryRun: true };
+        },
+        async sendArtifact(_target, value) {
+          sent.push({ type: "artifact", value });
+          return { ok: true, dryRun: true, filename: value.filename };
+        },
+      },
+    },
+    requesterAccess: () => "owner",
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  const received = await manager.receive(message("artifact-message"));
+  manager.enqueue(received.caseId, true);
+  await waitFor(() => manager.status().active === 0);
+  const draft = caseStore.detail(received.caseId).drafts[0];
+  assert.deepEqual(draft.artifacts, [{
+    path: artifact,
+    filename: "answer.mp4",
+    kind: "file",
+  }]);
+
+  await manager.sendDraft(received.caseId, draft.id);
+  assert.deepEqual(sent, [
+    { type: "text", text: "视频发你了。" },
+    {
+      type: "artifact",
+      value: { path: artifact, filename: "answer.mp4", kind: "file" },
+    },
+  ]);
+  assert.equal(caseStore.detail(received.caseId).drafts[0].outbound.artifacts.length, 1);
+  caseStore.close();
+});
+
 test("reruns a case when another message arrives during an active worker", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-rerun-"));
   const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));

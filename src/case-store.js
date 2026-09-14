@@ -184,6 +184,12 @@ export class CaseStore {
       "input_cutoff_message_id",
       "INTEGER NOT NULL DEFAULT 0",
     );
+    ensureColumn(
+      this.db,
+      "drafts",
+      "artifacts_json",
+      "TEXT NOT NULL DEFAULT '[]'",
+    );
     if (addedProcessedMessageCursor) {
       this.db.exec(`
         UPDATE worker_sessions
@@ -365,6 +371,7 @@ export class CaseStore {
     `).all(caseId, Math.min(Math.max(Number(limit) || 50, 1), 200))
       .map((row) => ({
         ...row,
+        artifacts: json(row.artifacts_json, []),
         outbound: json(row.outbound_json, null),
       }));
   }
@@ -487,15 +494,16 @@ export class CaseStore {
     const result = this.db.prepare(`
       INSERT INTO drafts(
         case_id, text, status, model, trigger_message_id,
-        input_cutoff_message_id, created_at
+        input_cutoff_message_id, artifacts_json, created_at
       )
-      VALUES (?, ?, 'draft', ?, ?, ?, ?)
+      VALUES (?, ?, 'draft', ?, ?, ?, ?, ?)
     `).run(
       caseId,
       String(text),
       String(model || ""),
       triggerMessageId || null,
       inputCutoffMessageId,
+      JSON.stringify(options.artifacts || []),
       timestamp,
     );
     this.db.prepare(`
@@ -582,9 +590,16 @@ export class CaseStore {
   }
 
   draft(caseId, draftId) {
-    return this.db.prepare(`
+    const row = this.db.prepare(`
       SELECT * FROM drafts WHERE case_id=? AND id=?
     `).get(caseId, Number(draftId));
+    return row
+      ? {
+          ...row,
+          artifacts: json(row.artifacts_json, []),
+          outbound: json(row.outbound_json, null),
+        }
+      : null;
   }
 
   stats() {
