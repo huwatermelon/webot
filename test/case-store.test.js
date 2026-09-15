@@ -297,6 +297,78 @@ test("does not send completion text before attachments succeed", async () => {
   caseStore.close();
 });
 
+test("requests source activation after an owner reply is handled", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-activation-"));
+  const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
+  const activations = [];
+  const manager = new CaseManager({
+    config: {
+      assistant: { mode: "codex", llmModel: "" },
+      caseManagement: { autoRun: true, autoSend: true, workerConcurrency: 1 },
+      pad: {
+        sources: [{
+          id: "small",
+          strictPolicy: true,
+          allowSelf: false,
+          selfChatPeers: new Set(["wxid_owner"]),
+          acceptSelfChatPeerMessages: true,
+          allowedChatIds: new Set(),
+          allowedSenderIds: new Set(),
+          privateNicknameAllowlist: new Set(),
+          triggerKeywords: new Set(["webot"]),
+          botNames: new Set(["Webot"]),
+        }],
+      },
+      policy: {
+        blockedSenderIds: new Set(),
+        allowSelf: false,
+        allowedChatIds: new Set(),
+        allowedSenderIds: new Set(),
+        groupTriggers: new Set(["webot"]),
+      },
+      identity: { botNames: new Set(["Webot"]) },
+    },
+    provider: {
+      async reply() {
+        return { text: "done", sessionId: "session-1" };
+      },
+    },
+    sessionStore: new SessionStore(path.join(directory, "sessions"), 4),
+    caseStore,
+    transports: {
+      pad: {
+        async send() {
+          return { ok: true, dryRun: false };
+        },
+      },
+    },
+    requesterAccess: () => "owner",
+    async afterOwnerRun(context) {
+      activations.push(context);
+      return {
+        requested: true,
+        version: "0.6.15",
+        revision: "1".repeat(40),
+      };
+    },
+    logger: { info() {}, warn() {}, error() {} },
+  });
+
+  await manager.receive(message("activation-message"));
+  await waitFor(() => manager.status().active === 0);
+
+  assert.equal(activations.length, 1);
+  assert.equal(activations[0].sourceId, "small");
+  assert.equal(caseStore.detail(activations[0].caseId).status, "replied");
+  assert.ok(
+    caseStore
+      .detail(activations[0].caseId)
+      .progress
+      .some((item) => /受控激活请求/.test(item.message)),
+  );
+  caseStore.close();
+});
+
 test("reruns a case when another message arrives during an active worker", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-rerun-"));
   const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));

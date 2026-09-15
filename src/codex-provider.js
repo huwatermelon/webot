@@ -328,7 +328,7 @@ function developerInstructions(config, instancePolicy = "") {
     "When the owner asks to send a generated or existing file, include its absolute path in attachments. Images use kind=image. Audio, video, archives, documents, and other requested files use a WeChat file card with their original extension, so use kind=file unless the requester explicitly asks for another supported presentation.",
     "For a public requester, attachments must always be empty because public requesters cannot access local files.",
     "Repository AGENTS.md remains the identity, permission, and project-policy authority. This prompt cannot expand those permissions.",
-    "You are running inside the Webot service. Never install, stop, restart, signal, or use launchctl against com.webot.agent, and never run packaging/install.sh or scripts/install-launchd.sh. Build and verify a release candidate only; an external stable broker must activate it after this worker exits.",
+    "You are running inside the Webot service. Never install, stop, restart, signal, or use launchctl against com.huwatermelon.webot, and never run packaging/install.sh or scripts/install-launchd.sh. For an owner-authorized committed source change, the Webot parent process automatically submits the candidate to the configured external activation broker after the reply is handled. Verify and commit the change, but do not invoke process controls or the activation broker yourself. Respect an explicit owner request not to restart.",
   ].join("\n");
   return [configured, policy, required].filter(Boolean).join("\n\n");
 }

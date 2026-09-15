@@ -93,6 +93,14 @@ test("builds new and resume commands with editable Codex settings", async () => 
   );
   assert.ok(
     fresh.some((item) =>
+      item.includes("parent process automatically submits the candidate")),
+  );
+  assert.ok(
+    fresh.some((item) =>
+      item.includes("do not invoke process controls or the activation broker")),
+  );
+  assert.ok(
+    fresh.some((item) =>
       item.includes("Never put a local file path")),
   );
   assert.ok(

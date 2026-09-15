@@ -10,6 +10,7 @@ import { WebotRuntime } from "./runtime.js";
 import { SessionStore } from "./session-store.js";
 import { serializeConfig } from "./settings-store.js";
 import { requesterAccess } from "./security.js";
+import { createSourceActivator } from "./source-activation.js";
 import { WorkspacePolicy } from "./workspace-policy.js";
 import { HookTransport } from "./transports/hook.js";
 import {
@@ -35,6 +36,7 @@ export class WebotApplication {
     this.workspacePolicy = null;
     this.connectorsStarted = false;
     this.startedAt = Date.now();
+    this.sourceActivator = createSourceActivator({ env });
   }
 
   async initialize() {
@@ -96,6 +98,7 @@ export class WebotApplication {
       caseStore: this.caseStore,
       transports,
       requesterAccess: accessForMessage,
+      afterOwnerRun: (context) => this.sourceActivator.activate(context),
       logger: this.logger,
     });
     this.padClients = this.config.channels.has("pad")

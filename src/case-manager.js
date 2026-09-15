@@ -13,6 +13,7 @@ export class CaseManager {
     caseStore,
     transports,
     requesterAccess = () => "public",
+    afterOwnerRun = null,
     logger = console,
   }) {
     this.config = config;
@@ -21,6 +22,8 @@ export class CaseManager {
     this.caseStore = caseStore;
     this.transports = transports;
     this.requesterAccess = requesterAccess;
+    this.afterOwnerRun =
+      typeof afterOwnerRun === "function" ? afterOwnerRun : null;
     this.logger = logger;
     this.running = new Map();
     this.runPromises = new Map();
@@ -295,6 +298,33 @@ export class CaseManager {
       );
       if (this.caseSettings().autoSend !== false) {
         await this.sendDraft(caseId, draftId);
+      }
+      if (owner && this.afterOwnerRun) {
+        try {
+          const activation = await this.afterOwnerRun({
+            caseId,
+            message: currentMessage,
+            sourceId: currentMessage.sourceId,
+          });
+          if (activation?.requested) {
+            this.caseStore.addProgress(
+              caseId,
+              session.run_count,
+              `已提交 Webot v${activation.version} 受控激活请求`,
+            );
+          }
+        } catch (error) {
+          this.caseStore.addProgress(
+            caseId,
+            session.run_count,
+            `Webot 受控激活请求失败：${error.message}`,
+            "warn",
+          );
+          this.logger.warn("source activation request failed", {
+            caseId,
+            error: error.message,
+          });
+        }
       }
     } catch (error) {
       const stopped = controller.signal.aborted;

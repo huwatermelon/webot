@@ -34,8 +34,9 @@ codesigning a standalone executable:
 ```
 
 The LaunchAgent uses the stable Node.js executable to load `bin/webot.js`
-directly. Run `npm run verify`, commit the change, and restart the service with
-the same command after source updates.
+directly. After an owner-authorized worker verifies and commits a source
+change, Webot requests guarded activation from the configured external broker.
+Set `WEBOT_ACTIVATION_BROKER_URL` to override the local broker endpoint.
 
 Runtime settings, messages, sessions, credentials, and knowledge are stored
 outside the source tree in the local Webot data directory. Configure gateway
