@@ -286,7 +286,7 @@ function renderCaseDetail(item) {
           : ""}
       </div>
       ${item.last_error ? `<div class="case-error">${escapeHtml(item.last_error)}</div>` : ""}
-      <details class="case-panel" data-case-panel="${workerPanel}" ${panelOpen(item.case_id, workerPanel, running) ? "open" : ""}>
+      <details class="case-panel" data-case-panel="${workerPanel}" ${panelOpen(item.case_id, workerPanel) ? "open" : ""}>
         <summary>
           <span><strong>Worker 会话</strong><small>${escapeHtml(caseStatusLabel(session.status))} · ${Number(session.run_count || 0)} 次运行</small></span>
           ${badge(caseStatusLabel(session.status), caseTone(session.status))}
@@ -310,10 +310,10 @@ function renderCaseDetail(item) {
       </details>
       <div class="case-section-head"><h3>回复草稿</h3><span>${Number(window.draftTotal || item.drafts?.length || 0)} 条</span></div>
       <div class="draft-list">
-        ${(item.drafts || []).map((draft, index) => {
+        ${(item.drafts || []).map((draft) => {
           const panel = `draft-${draft.id}`;
           return `
-          <details class="case-panel draft-panel" data-case-panel="${panel}" ${panelOpen(item.case_id, panel, index === 0) ? "open" : ""}>
+          <details class="case-panel draft-panel" data-case-panel="${panel}" ${panelOpen(item.case_id, panel) ? "open" : ""}>
             <summary>
               <span><strong>${draft.status === "sent" ? "已发送回复" : "回复草稿"} #${Number(draft.id)}</strong><small>${escapeHtml(draft.model || "未记录模型")} · ${time(draft.created_at)}</small></span>
               ${badge(caseStatusLabel(draft.status), draft.status === "sent" ? "good" : "warn")}
@@ -328,15 +328,20 @@ function renderCaseDetail(item) {
           </details>`;
         }).join("") || `<div class="case-muted">暂无 draft</div>`}
       </div>
-      <div class="case-section-head message-section-head"><h3>消息上下文</h3><span>${Number(window.messageTotal || item.messages?.length || 0)} 条</span></div>
-      <div class="message-list">
+      <details class="case-panel message-panel" data-case-panel="messages" ${panelOpen(item.case_id, "messages") ? "open" : ""}>
+        <summary>
+          <span><strong>消息上下文</strong><small>${Number(window.messageShown || item.messages?.length || 0)} / ${Number(window.messageTotal || item.messages?.length || 0)} 条</small></span>
+          ${badge(`${Number(window.messageTotal || item.messages?.length || 0)} 条`)}
+        </summary>
+        <div class="case-panel-body message-list">
           ${(item.messages || []).map((message) => `
             <div class="message-row ${message.direction === "outgoing" ? "outgoing" : ""}">
               <div><strong>${escapeHtml(message.sender_name || message.sender_id)}</strong><span>${time(message.timestamp)}</span></div>
               <p>${escapeHtml(message.text)}</p>
             </div>
           `).join("") || `<div class="case-muted">暂无消息</div>`}
-      </div>
+        </div>
+      </details>
     </div>`;
 }
 

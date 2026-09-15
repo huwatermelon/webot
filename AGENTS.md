@@ -51,3 +51,8 @@ in the local Webot data directory and must never be committed.
   generated media, and build output out of Git.
 - Commit source changes before creating a release candidate.
 - A worker must not stop or restart the service process that is executing it.
+- For owner-authorized changes that require a service reload, completion includes
+  handing the committed candidate to the configured external activation broker
+  and verifying its returned runtime revision. Do not stop at a source-only
+  result when that broker is available, unless the owner explicitly asks not to
+  activate the change.

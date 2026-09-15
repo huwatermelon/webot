@@ -200,9 +200,9 @@ textarea { min-height: 92px; resize: vertical; line-height: 1.5; }
 .case-panel > summary small { margin-top: 4px; color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .case-panel-body { padding: 12px; border-top: 1px solid var(--line); }
 .draft-panel > summary { background: #fffdf6; }
+.message-panel { margin-top: 18px; }
 .case-section-head { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .case-section-head span { color: var(--muted); font-size: 11px; }
-.message-section-head { margin-top: 18px; border-top: 1px solid var(--line); }
 .session-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .session-grid span { min-width: 0; padding: 10px; background: var(--surface-quiet); border: 1px solid var(--line); border-radius: var(--radius); color: var(--muted); font-size: 10px; }
 .session-grid strong { display: block; margin-top: 5px; color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
