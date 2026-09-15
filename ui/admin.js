@@ -270,16 +270,14 @@ function restoreCaseViewState(caseId) {
 function renderCaseDetail(item) {
   const session = item.workerSession || {};
   const window = item.displayWindow || {};
-  const totalTokens =
-    Number(session.input_tokens || 0) +
-    Number(session.output_tokens || 0) +
-    Number(session.reasoning_output_tokens || 0);
   const running = session.status === "running";
-  const workerPanel = "worker";
+  const liveProgress = (item.progress || []).filter(
+    (entry) => entry.level === "live",
+  );
+  const progressPanel = "codex-progress";
   const windowText = [
     `消息 ${Number(window.messageShown || item.messages?.length || 0)} / ${Number(window.messageTotal || item.messages?.length || 0)}`,
     `草稿 ${Number(window.draftShown || item.drafts?.length || 0)} / ${Number(window.draftTotal || item.drafts?.length || 0)}`,
-    `进度 ${Number(window.progressShown || item.progress?.length || 0)} / ${Number(window.progressTotal || item.progress?.length || 0)}`,
   ].join(" · ");
   return `
     <div class="case-detail-head">
@@ -304,28 +302,27 @@ function renderCaseDetail(item) {
           : ""}
       </div>
       ${item.last_error ? `<div class="case-error">${escapeHtml(item.last_error)}</div>` : ""}
-      <details class="case-panel" data-case-panel="${workerPanel}" ${panelOpen(item.case_id, workerPanel) ? "open" : ""}>
-        <summary>
-          <span><strong>Worker 会话</strong><small>${escapeHtml(caseStatusLabel(session.status))} · ${Number(session.run_count || 0)} 次运行</small></span>
-          ${badge(caseStatusLabel(session.status), caseTone(session.status))}
-        </summary>
-        <div class="case-panel-body">
-          <div class="session-grid">
-            <span>Codex Session<strong class="mono">${escapeHtml(session.codex_session_id ? session.codex_session_id.slice(0, 12) : "尚未建立")}</strong></span>
-            <span>模型<strong>${escapeHtml(session.model || "跟随配置")}</strong></span>
-            <span>模型请求<strong>${Number(session.request_count || 0)}</strong></span>
-            <span>累计 Token<strong>${totalTokens.toLocaleString("zh-CN")}</strong></span>
-            <span>开始<strong>${time(session.started_at)}</strong></span>
-            <span>完成<strong>${time(session.finished_at)}</strong></span>
-          </div>
-          ${session.codex_session_id
-            ? `<div class="inline-actions session-actions"><button class="button secondary" data-action="reset-session" data-case-id="${escapeHtml(item.case_id)}"><i data-lucide="refresh-cw"></i><span>重置 Codex Session</span></button></div>`
-            : ""}
-          <div class="progress-list">
-            ${(item.progress || []).map((entry) => `<div class="progress-row ${escapeHtml(entry.level)}"><span>${time(entry.created_at)}</span><strong>${escapeHtml(entry.message)}</strong></div>`).join("") || `<div class="case-muted">暂无进度</div>`}
-          </div>
-        </div>
-      </details>
+      ${(running || liveProgress.length)
+        ? `<details class="case-panel codex-progress-panel" data-case-panel="${progressPanel}" ${panelOpen(item.case_id, progressPanel, running) ? "open" : ""}>
+            <summary>
+              <span><strong>Codex Live Progress</strong><small>${liveProgress.length ? `${liveProgress.length} updates` : "waiting for first update"}</small></span>
+              ${badge(running ? "running" : "last run", running ? "warn" : "")}
+            </summary>
+            <div class="case-panel-body codex-progress-list">
+              ${liveProgress.length
+                ? liveProgress.map((entry) => `
+                    <div class="codex-progress-item">
+                      <div class="codex-progress-meta">
+                        <span>${time(entry.created_at)}</span>
+                        <code>run ${Number(entry.run_count || 0)} · #${Number(entry.id || 0)}</code>
+                      </div>
+                      <p>${escapeHtml(entry.message)}</p>
+                    </div>
+                  `).join("")
+                : `<div class="case-muted">Worker 已启动，等待 Codex 第一条中间进展。</div>`}
+            </div>
+          </details>`
+        : ""}
       <div class="case-section-head"><h3>回复草稿</h3><span>${Number(window.draftTotal || item.drafts?.length || 0)} 条</span></div>
       <div class="draft-list">
         ${(item.drafts || []).map((draft) => {

@@ -41,6 +41,15 @@ test("case workspace groups named sessions and reloads on runtime revision chang
   assert.match(javascript, /window\.location\.reload\(\)/);
 });
 
+test("case detail uses Codex Live Progress instead of the worker session card", () => {
+  assert.match(javascript, /Codex Live Progress/);
+  assert.match(javascript, /waiting for first update/);
+  assert.match(javascript, /codex-progress-item/);
+  assert.doesNotMatch(javascript, /Worker 会话/);
+  assert.doesNotMatch(javascript, /class="session-grid"/);
+  assert.match(css, /\.codex-progress-panel/);
+});
+
 test("case list width is narrower, draggable, persistent, and mobile-safe", () => {
   assert.match(javascript, /caseListDefaultWidth = 300/);
   assert.match(javascript, /data-case-resizer/);

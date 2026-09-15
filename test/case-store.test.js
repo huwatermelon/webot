@@ -829,15 +829,21 @@ test("sends natural-language intermediate items only for owner tasks", async () 
     const received = await manager.receive(message());
     manager.enqueue(received.caseId, true);
     await waitFor(() => manager.status().active === 0);
+    const liveProgress = caseStore
+      .detail(received.caseId)
+      .progress
+      .filter((item) => item.level === "live")
+      .map((item) => item.message);
     caseStore.close();
-    return sent;
+    return { sent, liveProgress };
   }
 
-  assert.deepEqual(
-    (await runFor("owner")).map((item) => item.text),
-    ["正在检查配置"],
-  );
-  assert.deepEqual(await runFor("public"), []);
+  const owner = await runFor("owner");
+  const publicRequester = await runFor("public");
+  assert.deepEqual(owner.sent.map((item) => item.text), ["正在检查配置"]);
+  assert.deepEqual(publicRequester.sent, []);
+  assert.deepEqual(owner.liveProgress, ["正在检查配置"]);
+  assert.deepEqual(publicRequester.liveProgress, ["正在检查配置"]);
 });
 
 test("handles owner slash commands locally and sends exactly one reply", async () => {

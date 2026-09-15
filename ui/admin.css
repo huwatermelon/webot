@@ -359,15 +359,13 @@ body.case-resizing { cursor: col-resize; user-select: none; }
 .message-panel { margin-top: 12px; }
 .case-section-head { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .case-section-head span { color: var(--muted); font-size: 10px; }
-.session-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
-.session-grid span { min-width: 0; padding: 8px; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-quiet); font-size: 9px; }
-.session-grid strong { display: block; margin-top: 4px; color: var(--ink); overflow-wrap: anywhere; font-size: 11px; }
-.session-actions { margin-top: 10px; }
-.progress-list { margin-top: 10px; display: grid; gap: 5px; }
-.progress-row { padding: 6px 8px; border-left: 3px solid var(--line-strong); background: var(--surface-quiet); display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 8px; font-size: 10px; }
-.progress-row span { color: var(--muted); }
-.progress-row.error { border-left-color: var(--red); }
-.progress-row.warn { border-left-color: var(--amber); }
+.codex-progress-panel { border-color: #eadb93; background: #fffdf4; }
+.codex-progress-panel > summary { background: #fffdf4; }
+.codex-progress-list { display: grid; gap: 8px; }
+.codex-progress-item { padding: 9px 10px; border: 1px solid #eadfb2; border-radius: var(--radius); background: #fff; }
+.codex-progress-meta { color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 9px; }
+.codex-progress-meta code { color: #8a6b14; font-size: 9px; }
+.codex-progress-item p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #2f3b4a; font-size: 11px; line-height: 1.5; }
 .draft-list { min-width: 0; }
 .draft-actions { min-height: 30px; color: var(--muted); display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 10px; }
 .draft-text { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
@@ -387,7 +385,6 @@ body.case-resizing { cursor: col-resize; user-select: none; }
   .account-list { display: flex; overflow-x: auto; }
   .account-item { min-width: 190px; border-right: 1px solid var(--line); border-bottom: 0; }
   .knowledge-studio { grid-template-columns: 220px minmax(0, 1fr); }
-  .session-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 680px) {
@@ -436,5 +433,4 @@ body.case-resizing { cursor: col-resize; user-select: none; }
   .case-detail-scroll { padding: 8px 10px 20px; }
   .case-empty { margin: 8px; }
   .message-row { max-width: 95%; }
-  .progress-row { grid-template-columns: 1fr; }
 }

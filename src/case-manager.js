@@ -205,16 +205,22 @@ export class CaseManager {
     const controller = new AbortController();
     this.running.set(caseId, controller);
     this.caseStore.addProgress(caseId, session.run_count, "worker 开始处理");
-    const sentIntermediate = new Set();
+    const liveProgressSeen = new Set();
     const onItem = async (item) => {
-      if (this.caseSettings().ownerIntermediateItems !== true) return;
-      if (this.requesterAccess(trigger.message) !== "owner") return;
       if (item?.type !== "agent_message") return;
       const text = String(item.text || "").trim();
-      if (!text || sentIntermediate.has(text)) return;
+      if (!text || liveProgressSeen.has(text)) return;
+      liveProgressSeen.add(text);
+      this.caseStore.addProgress(
+        caseId,
+        session.run_count,
+        text,
+        "live",
+      );
+      if (this.caseSettings().ownerIntermediateItems !== true) return;
+      if (this.requesterAccess(trigger.message) !== "owner") return;
       const transport = this.transports[trigger.message.transport];
       if (!transport) return;
-      sentIntermediate.add(text);
       try {
         const outbound = await transport.send(trigger.message, text);
         this.caseStore.addProgress(
