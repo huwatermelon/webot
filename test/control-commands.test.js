@@ -16,6 +16,10 @@ test("parses stable owner control commands", () => {
     type: "model",
     action: "list",
   });
+  assert.deepEqual(parseControlCommand("/modes"), {
+    type: "model",
+    action: "list",
+  });
   assert.deepEqual(parseControlCommand("/model list"), {
     type: "model",
     action: "list",
@@ -56,6 +60,20 @@ test("applies model and effort overrides without invoking a provider", async () 
     path.join(codexHome, "models_cache.json"),
     JSON.stringify({ models: [{ slug: "gpt-test" }, { slug: "gpt-other" }] }),
   );
+  await fs.writeFile(
+    path.join(codexHome, "custom-models.json"),
+    JSON.stringify({
+      models: [
+        { slug: "claude-opus-5" },
+        { slug: "gpt-image-2" },
+        { slug: "codex-auto-review" },
+      ],
+    }),
+  );
+  await fs.writeFile(
+    path.join(codexHome, "config.toml"),
+    'model_catalog_json = "custom-models.json"\n',
+  );
   const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
   const sessionStore = new SessionStore(path.join(directory, "sessions"), 4);
   const config = {
@@ -74,6 +92,27 @@ test("applies model and effort overrides without invoking a provider", async () 
   });
   assert.match(model.text, /gpt-other/);
   assert.equal(runtimeOverrides(caseStore, "case-1").model, "gpt-other");
+
+  const customModel = await applyControlCommand({
+    command: parseControlCommand("/model claude-opus-5"),
+    caseId: "case-1",
+    caseStore,
+    sessionStore,
+    config,
+  });
+  assert.match(customModel.text, /claude-opus-5/);
+  assert.equal(runtimeOverrides(caseStore, "case-1").model, "claude-opus-5");
+
+  const models = await applyControlCommand({
+    command: parseControlCommand("/modes"),
+    caseId: "case-1",
+    caseStore,
+    sessionStore,
+    config,
+  });
+  assert.match(models.text, /claude-opus-5/);
+  assert.doesNotMatch(models.text, /gpt-image-2/);
+  assert.doesNotMatch(models.text, /codex-auto-review/);
 
   const effort = await applyControlCommand({
     command: parseControlCommand("/effort low"),

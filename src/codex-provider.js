@@ -120,6 +120,7 @@ function parseTomlScalar(rawValue) {
 function localConfigValues(configText) {
   const keys = new Set([
     "model",
+    "model_catalog_json",
     "model_provider",
     "service_tier",
     "model_reasoning_effort",

@@ -45,7 +45,7 @@ live mode is explicitly enabled.
 
 Owner control commands include `/session`, `/session list`,
 `/session new <name>`, `/session <name>`, `/session delete <name>`,
-`/models`, `/model`, `/effort`, `/status`, `/clear`, and `/stop`. Named
+`/models` (`/modes` alias), `/model`, `/effort`, `/status`, `/clear`, and `/stop`. Named
 session metadata and conversation state remain in the local data directory.
 
 ## WeChat Gateway

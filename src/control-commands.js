@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { codexRuntimeStatus } from "./codex-provider.js";
 import {
@@ -22,22 +21,30 @@ function unique(values) {
   return [...new Set(values.map(clean).filter(Boolean))];
 }
 
-function modelsFile(config = {}, env = process.env) {
-  const home = clean(config.codexHome || env.WEBOT_CODEX_HOME || env.CODEX_HOME)
-    || path.join(os.homedir(), ".codex");
-  return path.join(home, "models_cache.json");
-}
-
-export function availableModels(config = {}, env = process.env) {
-  let catalog = [];
+function catalogModels(file) {
   try {
-    const value = JSON.parse(fs.readFileSync(modelsFile(config, env), "utf8"));
-    catalog = (Array.isArray(value?.models) ? value.models : [])
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    return (Array.isArray(value?.models) ? value.models : [])
       .map((entry) => clean(entry?.slug))
       .filter(validModel)
       .filter((model) => !/^(?:gpt-image-|codex-auto-review$)/i.test(model));
-  } catch {}
+  } catch {
+    return [];
+  }
+}
+
+export function availableModels(config = {}, env = process.env) {
   const runtime = codexRuntimeStatus(config, env);
+  const configuredCatalog = clean(runtime.localConfig.model_catalog_json);
+  const catalogFiles = [
+    path.join(runtime.home, "models_cache.json"),
+    configuredCatalog
+      ? (path.isAbsolute(configuredCatalog)
+          ? configuredCatalog
+          : path.join(runtime.home, configuredCatalog))
+      : "",
+  ].filter(Boolean);
+  const catalog = catalogFiles.flatMap(catalogModels);
   return unique([
     runtime.effective.model,
     runtime.localConfig.model,
@@ -50,7 +57,10 @@ export function parseControlCommand(value) {
   if (!text.startsWith("/")) return null;
   const session = parseSessionCommand(text);
   if (session) return session;
-  if (/^\/models\s*$/i.test(text) || /^\/model\s+list\s*$/i.test(text)) {
+  if (
+    /^\/(?:models|modes)\s*$/i.test(text)
+    || /^\/model\s+list\s*$/i.test(text)
+  ) {
     return { type: "model", action: "list" };
   }
   const model = text.match(/^\/model(?:\s+(\S+))?(?:\s+([\s\S]+))?$/i);
