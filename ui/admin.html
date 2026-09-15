@@ -17,18 +17,28 @@
           <span>Personal Assistant</span>
         </div>
       </div>
-      <div class="service-state">
-        <span id="service-dot" class="status-dot"></span>
-        <span id="service-label">正在连接</span>
-        <code id="runtime-build">读取版本中</code>
+      <div class="header-actions">
+        <label id="worker-control" class="switch-control" title="开启或暂停 Case Worker">
+          <input id="worker-toggle" type="checkbox" data-action="workers-toggle">
+          <span class="switch-track"><span class="switch-knob"></span></span>
+          <span id="worker-label" class="switch-text">Workers</span>
+        </label>
+        <label class="header-toggle" title="生成 Draft 后是否自动回复微信">
+          <input id="auto-reply-toggle" type="checkbox" data-action="auto-reply-toggle">
+          <span id="auto-reply-label">Auto reply</span>
+        </label>
+        <div class="service-state">
+          <span id="service-dot" class="status-dot"></span>
+          <span id="service-label">正在连接</span>
+          <code id="runtime-build">读取版本中</code>
+        </div>
       </div>
     </header>
     <div class="toolbar app-toolbar">
       <nav aria-label="管理视图">
         <button class="nav-item active" data-view="cases"><i data-lucide="inbox"></i><span>Case</span></button>
-        <button class="nav-item" data-view="overview"><i data-lucide="layout-dashboard"></i><span>概览</span></button>
+        <button class="nav-item" data-view="knowledge"><i data-lucide="book-open"></i><span>知识库</span></button>
         <button class="nav-item" data-view="settings"><i data-lucide="settings"></i><span>设置</span></button>
-        <button class="nav-item" data-view="release"><i data-lucide="package-check"></i><span>运行</span></button>
       </nav>
       <div class="view-context">
         <span id="view-eyebrow">CASES</span>

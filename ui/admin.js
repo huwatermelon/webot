@@ -1,73 +1,46 @@
 import {
   Activity,
   BookOpen,
-  Bot,
-  BrainCircuit,
-  CheckCircle2,
-  CircleAlert,
-  Clock3,
   Cloud,
-  Database,
   Eye,
   FileText,
-  Gauge,
   Inbox,
-  LayoutDashboard,
   MessageSquare,
-  PackageCheck,
   Play,
   Plus,
   RefreshCw,
   Save,
   Send,
-  Server,
   Settings,
-  ShieldCheck,
   Trash2,
   UserRound,
   Users,
-  Wifi,
-  WifiOff,
   createIcons,
 } from "lucide";
 
 const iconSet = {
   Activity,
   BookOpen,
-  Bot,
-  BrainCircuit,
-  CheckCircle2,
-  CircleAlert,
-  Clock3,
   Cloud,
-  Database,
   Eye,
   FileText,
-  Gauge,
   Inbox,
-  LayoutDashboard,
   MessageSquare,
-  PackageCheck,
   Play,
   Plus,
   RefreshCw,
   Save,
   Send,
-  Server,
   Settings,
-  ShieldCheck,
   Trash2,
   UserRound,
   Users,
-  Wifi,
-  WifiOff,
 };
 
 const views = {
   cases: ["CASES", "微信 Case"],
-  overview: ["SYSTEM", "运行概览"],
+  knowledge: ["KNOWLEDGE", "知识库"],
   settings: ["CONFIG", "设置"],
-  release: ["RUNTIME", "运行与发布"],
 };
 
 let activeView = views[location.hash.slice(1)]
@@ -88,6 +61,7 @@ const caseHistoryExpanded = new Map();
 const caseViewStates = new Map();
 let agentDocument = null;
 let agentDirty = false;
+const settingsFoldOpen = new Set();
 let knowledgeDocuments = [];
 let selectedKnowledge = null;
 let knowledgeDirty = false;
@@ -122,14 +96,6 @@ function parseList(value) {
         .filter(Boolean),
     ),
   ];
-}
-
-function duration(seconds) {
-  const value = Number(seconds || 0);
-  if (value < 60) return `${value} 秒`;
-  if (value < 3600) return `${Math.floor(value / 60)} 分钟`;
-  if (value < 86400) return `${Math.floor(value / 3600)} 小时`;
-  return `${Math.floor(value / 86400)} 天`;
 }
 
 function time(value) {
@@ -357,10 +323,6 @@ function renderCases() {
             <strong>${caseTotal} 个 Case</strong>
             <span>${Number(workers.active || 0)} 运行 · ${Number(workers.queued || 0)} 排队</span>
           </div>
-          <label class="worker-switch">
-            <span>${workers.paused ? "Worker 已暂停" : "Worker 运行中"}</span>
-            <input type="checkbox" data-action="workers-paused" ${workers.paused ? "checked" : ""}>
-          </label>
         </div>
         <div class="case-list">
           ${cases.map((item) => `
@@ -385,51 +347,6 @@ function renderCases() {
     </div>`;
 }
 
-function renderOverview() {
-  const readySources = (status.padSources || []).filter(
-    (source) => source.health?.ready || source.websocket?.connected,
-  ).length;
-  const inbound = (status.padSources || []).reduce(
-    (sum, source) => sum + Number(source.inboundMessages || 0),
-    0,
-  );
-  const kb = status.knowledgeBase || {};
-  content.innerHTML = `
-    <div class="section">
-      <div class="metric-grid">
-        <div class="metric"><div class="metric-top"><span>服务状态</span><i data-lucide="activity"></i></div><strong>运行中</strong><small>已持续 ${duration(status.uptimeSeconds)}</small></div>
-        <div class="metric"><div class="metric-top"><span>微信连接</span><i data-lucide="wifi"></i></div><strong>${readySources} / ${status.padSources.length}</strong><small>${status.padSources.length ? "已配置账号" : "尚未配置账号"}</small></div>
-        <div class="metric"><div class="metric-top"><span>本次入站</span><i data-lucide="message-square"></i></div><strong>${inbound}</strong><small>进程启动后收到的消息</small></div>
-        <div class="metric"><div class="metric-top"><span>发送模式</span><i data-lucide="shield-check"></i></div><strong>${status.outboundMode === "live" ? "正式" : "演练"}</strong><small>${status.outboundMode === "live" ? "允许发送回复" : "不发送真实消息"}</small></div>
-      </div>
-    </div>
-    <div class="section">
-      <div class="section-head"><div><h2>账号状态</h2><p>连接与入站运行状态</p></div><button class="button secondary" data-action="probe-all"><i data-lucide="refresh-cw"></i><span>重新检测</span></button></div>
-      ${status.padSources.length ? `
-      <div class="table-wrap"><table>
-        <thead><tr><th>账号</th><th>接入</th><th>运行状态</th><th>登录态</th><th>入站</th><th>最近检测</th></tr></thead>
-        <tbody>${status.padSources.map((source) => {
-          const ready = source.health?.ready || source.websocket?.connected;
-          return `<tr>
-            <td><strong>${escapeHtml(source.displayName)}</strong><br><span class="mono">${escapeHtml(source.selfId)}</span></td>
-            <td>Gateway WebSocket</td>
-            <td>${badge(ready ? "就绪" : source.health?.state || "等待", ready ? "good" : "warn")}</td>
-            <td>${escapeHtml(source.health?.loginState || (source.health?.online ? "online" : "未知"))}</td>
-            <td>${Number(source.inboundMessages || 0)}</td>
-            <td>${time(source.health?.checkedAt || source.websocket?.lastConnectedAt)}</td>
-          </tr>`;
-        }).join("")}</tbody>
-      </table></div>` : `<div class="empty"><div><i data-lucide="users"></i><div>尚未配置微信账号</div></div></div>`}
-    </div>
-    <div class="section">
-      <div class="section-head"><div><h2>个人知识库</h2><p>Git 云端与本地索引状态</p></div>${kb.enabled ? `<button class="button secondary" data-action="sync-kb"><i data-lucide="cloud"></i><span>立即同步</span></button>` : ""}</div>
-      <div class="metric-grid">
-        <div class="metric"><div class="metric-top"><span>同步状态</span><i data-lucide="cloud"></i></div><strong>${kb.enabled ? (kb.ready ? "已就绪" : "等待") : "未启用"}</strong><small>${kb.lastError ? escapeHtml(kb.lastError) : time(kb.lastSyncAt)}</small></div>
-        <div class="metric"><div class="metric-top"><span>Markdown</span><i data-lucide="book-open"></i></div><strong>${Number(kb.noteCount || 0)}</strong><small>当前可检索文档</small></div>
-      </div>
-    </div>`;
-}
-
 function field(label, id, value, options = {}) {
   const full = options.full ? " full" : "";
   const type = options.type || "text";
@@ -448,18 +365,21 @@ function accountsMarkup() {
   const sources = settings.pad.sources || [];
   const source = sources[selectedSource];
   return `
-    <div class="section settings-card">
-      <div class="section-head"><div><h2>账号列表</h2><p>${sources.length} 个接入账号</p></div><button class="button secondary" data-action="add-source"><i data-lucide="plus"></i><span>添加账号</span></button></div>
-      <div class="split-layout">
-        <div class="account-list">
-          ${sources.map((item, index) => `<button class="account-item ${index === selectedSource ? "active" : ""}" data-source-index="${index}">
-            <span class="account-avatar"><i data-lucide="user-round"></i></span>
-            <span class="account-copy"><strong>${escapeHtml(item.displayName || item.id)}</strong><span>${escapeHtml(item.selfId || "未填写 wxid")}</span></span>
-          </button>`).join("")}
+    <details class="settings-card settings-fold" data-settings-fold="accounts" ${settingsFoldOpen.has("accounts") ? "open" : ""}>
+      <summary><span><strong>账号列表</strong><small>${sources.length} 个接入账号</small></span></summary>
+      <div class="settings-card-body">
+        <div class="section-head"><div><h2>微信账号</h2><p>接入、监听与触发配置</p></div><button class="button secondary" data-action="add-source"><i data-lucide="plus"></i><span>添加账号</span></button></div>
+        <div class="split-layout">
+          <div class="account-list">
+            ${sources.map((item, index) => `<button class="account-item ${index === selectedSource ? "active" : ""}" data-source-index="${index}">
+              <span class="account-avatar"><i data-lucide="user-round"></i></span>
+              <span class="account-copy"><strong>${escapeHtml(item.displayName || item.id)}</strong><span>${escapeHtml(item.selfId || "未填写 wxid")}</span></span>
+            </button>`).join("")}
+          </div>
+          <div class="editor">${source ? accountEditor(source) : `<div class="empty"><div><i data-lucide="users"></i><div>添加一个微信账号</div></div></div>`}</div>
         </div>
-        <div class="editor">${source ? accountEditor(source) : `<div class="empty"><div><i data-lucide="users"></i><div>添加一个微信账号</div></div></div>`}</div>
       </div>
-    </div>`;
+    </details>`;
 }
 
 function accountEditor(source) {
@@ -506,64 +426,82 @@ function accountEditor(source) {
 
 function assistantMarkup() {
   const assistant = settings.assistant;
-  const kb = settings.knowledgeBase;
   const caseManagement = settings.caseManagement || {};
   const codex = status.codex || {};
   const effective = codex.effective || {};
   return `
-    <div class="section settings-card">
-      <div class="section-head"><div><h2>AGENTS.md</h2><p>${escapeHtml(agentDocument?.path || status.agentFile || "当前工作目录")}</p></div><button class="button primary" data-action="save-agent" ${agentDirty ? "" : "disabled"}><i data-lucide="save"></i><span>保存身份与权限</span></button></div>
-      <textarea id="agent-editor" class="document-editor" spellcheck="false">${escapeHtml(agentDocument?.content || "")}</textarea>
-      <p class="editor-note">这是当前实例的最高层个人策略。System Prompt、Skill 和 KB 可以补充，但不能扩大这里的权限。</p>
-    </div>
-    <div class="section settings-card">
-      <div class="section-head"><div><h2>助手后端</h2><p>当前模式：${escapeHtml(assistant.mode)}</p></div></div>
-      <div class="form-grid three">
-        <div class="field"><label for="assistant-mode">运行模式</label><select id="assistant-mode" data-dirty>
-          <option value="codex" ${assistant.mode === "codex" ? "selected" : ""}>本机 Codex</option>
-          <option value="echo" ${assistant.mode === "echo" ? "selected" : ""}>Echo</option>
-          <option value="webhook" ${assistant.mode === "webhook" ? "selected" : ""}>Webhook</option>
-          <option value="openai-compatible" ${assistant.mode === "openai-compatible" ? "selected" : ""}>OpenAI Compatible</option>
-        </select></div>
-        ${field("历史轮数", "assistant-history", assistant.historyTurns, { type: "number" })}
-        ${field("Worker 超时（毫秒）", "assistant-timeout", assistant.timeoutMs, { type: "number", note: "0 表示不限制" })}
-        ${field("Codex 可执行文件", "assistant-codex-bin", assistant.codexBin || codex.binary, { full: true })}
-        ${field("CODEX_HOME", "assistant-codex-home", assistant.codexHome || codex.home, { full: true })}
-        ${field("工作目录", "assistant-working-directory", assistant.workingDirectory || effective.workingDirectory, { full: true })}
-        ${field("Codex 模型", "assistant-codex-model", assistant.codexModel || effective.model, { note: "留空则继承本机配置" })}
-        ${field("Reasoning Effort", "assistant-reasoning-effort", assistant.reasoningEffort || effective.reasoningEffort, { note: "low / medium / high / xhigh" })}
-        ${field("Service Tier", "assistant-service-tier", assistant.serviceTier || effective.serviceTier, { note: "standard / priority / flex" })}
-        ${field("LLM Base URL", "assistant-base-url", assistant.llmBaseUrl, { full: true })}
-        ${field("OpenAI Compatible 模型", "assistant-model", assistant.llmModel)}
-        ${field("API Key", "assistant-api-key", "", { type: "password", note: assistant.llmApiKeyConfigured ? "已配置" : "" })}
-        ${field("Webhook URL", "assistant-webhook-url", assistant.webhookUrl, { full: true })}
-        ${field("Webhook Token", "assistant-webhook-token", "", { type: "password", note: assistant.webhookTokenConfigured ? "已配置" : "" })}
-        ${field("System Prompt", "assistant-prompt", assistant.systemPrompt, { textarea: true, full: true, note: "Codex 模式下作为 developer_instructions 生效" })}
+    <details class="settings-card settings-fold" data-settings-fold="agents" ${settingsFoldOpen.has("agents") ? "open" : ""}>
+      <summary><span><strong>AGENTS.md</strong><small>${escapeHtml(agentDocument?.path || status.agentFile || "当前工作目录")}</small></span></summary>
+      <div class="settings-card-body">
+        <div class="section-head"><div><h2>身份与权限</h2><p>当前实例的最高层个人策略</p></div><button class="button primary" data-action="save-agent" ${agentDirty ? "" : "disabled"}><i data-lucide="save"></i><span>保存</span></button></div>
+        <textarea id="agent-editor" class="document-editor" spellcheck="false">${escapeHtml(agentDocument?.content || "")}</textarea>
+        <p class="editor-note">System Prompt、Skill 和 KB 可以补充，但不能扩大这里的权限。</p>
       </div>
-      <div class="release-row"><span>本机配置</span><strong>${codex.configPresent ? "已读取" : "未找到"} · ${codex.authPresent ? "认证已就绪" : "认证未就绪"}</strong></div>
-      <div class="release-row"><span>配置更新时间</span><code>${escapeHtml(codex.configMtime || "未知")}</code></div>
-    </div>
+    </details>
+    <details class="settings-card settings-fold" data-settings-fold="assistant" ${settingsFoldOpen.has("assistant") ? "open" : ""}>
+      <summary><span><strong>助手后端</strong><small>当前模式：${escapeHtml(assistant.mode)}</small></span></summary>
+      <div class="settings-card-body">
+        <div class="form-grid three">
+          <div class="field"><label for="assistant-mode">运行模式</label><select id="assistant-mode" data-dirty>
+            <option value="codex" ${assistant.mode === "codex" ? "selected" : ""}>本机 Codex</option>
+            <option value="echo" ${assistant.mode === "echo" ? "selected" : ""}>Echo</option>
+            <option value="webhook" ${assistant.mode === "webhook" ? "selected" : ""}>Webhook</option>
+            <option value="openai-compatible" ${assistant.mode === "openai-compatible" ? "selected" : ""}>OpenAI Compatible</option>
+          </select></div>
+          ${field("历史轮数", "assistant-history", assistant.historyTurns, { type: "number" })}
+          ${field("Worker 超时（毫秒）", "assistant-timeout", assistant.timeoutMs, { type: "number", note: "0 表示不限制" })}
+          ${field("Codex 可执行文件", "assistant-codex-bin", assistant.codexBin || codex.binary, { full: true })}
+          ${field("CODEX_HOME", "assistant-codex-home", assistant.codexHome || codex.home, { full: true })}
+          ${field("工作目录", "assistant-working-directory", assistant.workingDirectory || effective.workingDirectory, { full: true })}
+          ${field("Codex 模型", "assistant-codex-model", assistant.codexModel || effective.model, { note: "留空则继承本机配置" })}
+          ${field("Reasoning Effort", "assistant-reasoning-effort", assistant.reasoningEffort || effective.reasoningEffort, { note: "low / medium / high / xhigh" })}
+          ${field("Service Tier", "assistant-service-tier", assistant.serviceTier || effective.serviceTier, { note: "standard / priority / flex" })}
+          ${field("LLM Base URL", "assistant-base-url", assistant.llmBaseUrl, { full: true })}
+          ${field("OpenAI Compatible 模型", "assistant-model", assistant.llmModel)}
+          ${field("API Key", "assistant-api-key", "", { type: "password", note: assistant.llmApiKeyConfigured ? "已配置" : "" })}
+          ${field("Webhook URL", "assistant-webhook-url", assistant.webhookUrl, { full: true })}
+          ${field("Webhook Token", "assistant-webhook-token", "", { type: "password", note: assistant.webhookTokenConfigured ? "已配置" : "" })}
+          ${field("System Prompt", "assistant-prompt", assistant.systemPrompt, { textarea: true, full: true, note: "Codex 模式下作为 developer_instructions 生效" })}
+        </div>
+        <div class="release-row"><span>本机配置</span><strong>${codex.configPresent ? "已读取" : "未找到"} · ${codex.authPresent ? "认证已就绪" : "认证未就绪"}</strong></div>
+        <div class="release-row"><span>配置更新时间</span><code>${escapeHtml(codex.configMtime || "未知")}</code></div>
+      </div>
+    </details>
     <div class="section settings-card">
       <div class="section-head"><div><h2>Case 自动化</h2><p>入站先形成 Case，再由 worker 生成 draft</p></div></div>
       ${toggle("自动运行 Worker", "case-auto-run", caseManagement.autoRun !== false, "新消息进入后自动生成 draft")}
-      ${toggle("自动发送 Draft", "case-auto-send", caseManagement.autoSend !== false, "生成成功后立即回复微信")}
       ${toggle("本人接收中间回复", "case-owner-intermediate-items", caseManagement.ownerIntermediateItems === true, "仅 owner 任务发送 Codex 的自然语言中间 item")}
       <div class="form-grid">
         ${field("Worker 并发", "case-worker-concurrency", caseManagement.workerConcurrency || 2, { type: "number" })}
       </div>
     </div>
     <div class="section settings-card">
-      <div class="section-head"><div><h2>个人 KB Cloud</h2><p>${status.knowledgeBase?.ready ? `${status.knowledgeBase.noteCount} 篇文档` : "未同步"}</p></div><div class="inline-actions"><button class="button secondary" data-action="new-kb"><i data-lucide="plus"></i><span>新建文档</span></button><button class="button secondary" data-action="sync-kb"><i data-lucide="cloud"></i><span>立即同步</span></button></div></div>
-      ${toggle("启用知识库", "kb-enabled", kb.enabled, "检索相关 Markdown 并注入助手上下文")}
-      <div class="form-grid">
-        ${field("Git Remote", "kb-remote", kb.remote, { full: true })}
-        ${field("分支", "kb-branch", kb.branch)}
-        ${field("本地目录", "kb-local-dir", kb.localDir)}
-        ${field("同步间隔（秒）", "kb-interval", kb.syncIntervalSeconds, { type: "number" })}
-        ${field("最多命中文档", "kb-max-notes", kb.maxNotes, { type: "number" })}
-        ${field("单篇字符上限", "kb-max-chars", kb.maxCharsPerNote, { type: "number" })}
-      </div>
-      ${toggle("仅使用 approved 文档", "kb-approved", kb.requireApproved, "Frontmatter 需要 approved: true")}
+      <h2 style="margin-bottom:16px">发送控制</h2>
+      <div class="field"><label>发送模式</label><div class="segmented">
+        <button data-action="outbound-mode" data-mode="dry-run" class="${settings.outboundMode !== "live" ? "active" : ""}">演练</button>
+        <button data-action="outbound-mode" data-mode="live" class="${settings.outboundMode === "live" ? "active" : ""}">正式</button>
+      </div></div>
+      ${toggle("网关写操作确认", "pad-write-confirm", settings.pad.requireWriteConfirmation, "请求附带确认标记与唯一请求 ID")}
+    </div>`;
+}
+
+function renderKnowledge() {
+  const kb = settings.knowledgeBase;
+  content.innerHTML = `
+    <div class="knowledge-page">
+      <section class="settings-card knowledge-config">
+        <div class="section-head"><div><h2>KB 路径与同步</h2><p>${status.knowledgeBase?.ready ? `${status.knowledgeBase.noteCount} 篇文档` : "未同步"}</p></div><div class="inline-actions"><button class="button secondary" data-action="new-kb"><i data-lucide="plus"></i><span>新建文档</span></button><button class="button secondary" data-action="sync-kb"><i data-lucide="cloud"></i><span>立即同步</span></button></div></div>
+        ${toggle("启用知识库", "kb-enabled", kb.enabled, "检索相关 Markdown 并注入助手上下文")}
+        <div class="form-grid knowledge-config-grid">
+          ${field("Git Remote", "kb-remote", kb.remote, { full: true })}
+          ${field("分支", "kb-branch", kb.branch)}
+          ${field("本地目录", "kb-local-dir", kb.localDir)}
+          ${field("同步间隔（秒）", "kb-interval", kb.syncIntervalSeconds, { type: "number" })}
+          ${field("最多命中文档", "kb-max-notes", kb.maxNotes, { type: "number" })}
+          ${field("单篇字符上限", "kb-max-chars", kb.maxCharsPerNote, { type: "number" })}
+        </div>
+        ${toggle("仅使用 approved 文档", "kb-approved", kb.requireApproved, "Frontmatter 需要 approved: true")}
+      </section>
       <div class="knowledge-studio">
         <aside class="knowledge-list">
           <div class="knowledge-list-head"><strong>Markdown</strong><span>${knowledgeDocuments.length}</span></div>
@@ -591,14 +529,6 @@ function assistantMarkup() {
           ` : `<div class="empty"><div><i data-lucide="book-open"></i><div>选择或新建一篇 Markdown 文档</div></div></div>`}
         </div>
       </div>
-    </div>
-    <div class="section settings-card">
-      <h2 style="margin-bottom:16px">发送控制</h2>
-      <div class="field"><label>发送模式</label><div class="segmented">
-        <button data-action="outbound-mode" data-mode="dry-run" class="${settings.outboundMode !== "live" ? "active" : ""}">演练</button>
-        <button data-action="outbound-mode" data-mode="live" class="${settings.outboundMode === "live" ? "active" : ""}">正式</button>
-      </div></div>
-      ${toggle("网关写操作确认", "pad-write-confirm", settings.pad.requireWriteConfirmation, "请求附带确认标记与唯一请求 ID")}
     </div>`;
 }
 
@@ -607,40 +537,6 @@ function renderSettings() {
     <div class="settings-panel">
       ${accountsMarkup()}
       ${assistantMarkup()}
-    </div>`;
-}
-
-function renderRelease() {
-  const codex = status.codex || {};
-  const effective = codex.effective || {};
-  const sourceMode = status.runtime?.mode === "source";
-  const runtimeLabel = sourceMode ? "源码" : "单文件";
-  const runtimeDetail = sourceMode
-    ? "稳定 Node 进程直接加载仓库代码"
-    : "Node SEA 可执行文件";
-  content.innerHTML = `
-    <div class="section">
-      <div class="section-head"><div><h2>运行信息</h2><p>本机 Webot 服务</p></div></div>
-      <div class="release-row"><span>版本标签</span><strong>v${escapeHtml(status.version)}</strong></div>
-      <div class="release-row"><span>运行方式</span><strong>${runtimeLabel}</strong></div>
-      ${sourceMode ? `<div class="release-row"><span>Commit ID</span><code>${escapeHtml(status.runtime?.sourceRevision || "unknown")}</code></div>` : ""}
-      <div class="release-row"><span>监听地址</span><code>http://127.0.0.1:18120</code></div>
-      <div class="release-row"><span>数据目录</span><code>${escapeHtml(status.dataDir)}</code></div>
-      <div class="release-row"><span>配置文件</span><code>${escapeHtml(status.settingsFile)}</code></div>
-      <div class="release-row"><span>运行通道</span><strong>${escapeHtml(status.channels.join(", ") || "未启用")}</strong></div>
-      <div class="release-row"><span>Codex</span><strong>${codex.binaryReady && codex.configPresent ? "可用" : "未就绪"}</strong></div>
-      <div class="release-row"><span>Codex 路径</span><code>${escapeHtml(codex.binary || "")}</code></div>
-      <div class="release-row"><span>CODEX_HOME</span><code>${escapeHtml(codex.home || "")}</code></div>
-      <div class="release-row"><span>有效模型</span><strong>${escapeHtml(effective.model || "本机默认")}</strong></div>
-      <div class="release-row"><span>Reasoning / Tier</span><strong>${escapeHtml(effective.reasoningEffort || "默认")} / ${escapeHtml(effective.serviceTier || "默认")}</strong></div>
-    </div>
-    <div class="section">
-      <div class="section-head"><div><h2>发布形态</h2><p>当前服务实际加载方式</p></div></div>
-      <div class="metric-grid">
-        <div class="metric"><div class="metric-top"><span>服务程序</span><i data-lucide="package-check"></i></div><strong>${runtimeLabel}</strong><small>${runtimeDetail}</small></div>
-        <div class="metric"><div class="metric-top"><span>配置与会话</span><i data-lucide="database"></i></div><strong>外置</strong><small>用户数据目录独立保存</small></div>
-        <div class="metric"><div class="metric-top"><span>代码更新</span><i data-lucide="shield-check"></i></div><strong>${sourceMode ? "重启生效" : "重新打包"}</strong><small>${sourceMode ? "无需构建或签名" : "构建新的已签名程序"}</small></div>
-      </div>
     </div>`;
 }
 
@@ -655,25 +551,45 @@ function renderRuntimeIdentity() {
     : `v${status.version || "unknown"}`;
 }
 
+function renderHeaderControls() {
+  if (!settings || !workers) return;
+  const workerEnabled = !workers.paused;
+  const workerToggle = document.querySelector("#worker-toggle");
+  const workerControl = document.querySelector("#worker-control");
+  workerToggle.checked = workerEnabled;
+  workerControl.classList.toggle("worker-on", workerEnabled);
+  workerControl.classList.toggle("worker-off", !workerEnabled);
+  document.querySelector("#worker-label").textContent =
+    workerEnabled ? "Workers ON" : "Workers OFF";
+
+  const autoReplyEnabled = settings.caseManagement?.autoSend !== false;
+  document.querySelector("#auto-reply-toggle").checked = autoReplyEnabled;
+  document.querySelector("#auto-reply-label").textContent =
+    autoReplyEnabled ? "Auto reply ON" : "Auto reply OFF";
+}
+
 function render() {
   const [eyebrow, title] = views[activeView];
   document.body.classList.toggle("view-cases", activeView === "cases");
+  document.body.classList.toggle("view-knowledge", activeView === "knowledge");
   document.body.classList.toggle("view-settings", activeView === "settings");
   content.classList.toggle("case-content", activeView === "cases");
+  content.classList.toggle("knowledge-content", activeView === "knowledge");
   document.querySelector("#view-eyebrow").textContent = eyebrow;
   document.querySelector("#view-title").textContent = title;
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.view === activeView);
   });
-  document.querySelector("#save-button").classList.toggle("hidden", activeView !== "settings");
-  saveState.classList.toggle("hidden", activeView !== "settings");
+  const configurable = activeView === "settings" || activeView === "knowledge";
+  document.querySelector("#save-button").classList.toggle("hidden", !configurable);
+  saveState.classList.toggle("hidden", !configurable);
   if (!settings || !status) {
     content.innerHTML = `<div class="empty"><div><i data-lucide="refresh-cw"></i><div>正在读取运行状态</div></div></div>`;
   } else if (activeView === "cases") renderCases();
-  else if (activeView === "overview") renderOverview();
+  else if (activeView === "knowledge") renderKnowledge();
   else if (activeView === "settings") renderSettings();
-  else renderRelease();
   renderRuntimeIdentity();
+  renderHeaderControls();
   icons();
   if (activeView === "cases" && selectedCase) {
     restoreCaseViewState(selectedCase.case_id);
@@ -722,19 +638,9 @@ function readAssistantForm() {
     reasoningEffort: document.querySelector("#assistant-reasoning-effort").value.trim(),
     serviceTier: document.querySelector("#assistant-service-tier").value.trim(),
   });
-  Object.assign(settings.knowledgeBase, {
-    enabled: document.querySelector("#kb-enabled").checked,
-    remote: document.querySelector("#kb-remote").value.trim(),
-    branch: document.querySelector("#kb-branch").value.trim(),
-    localDir: document.querySelector("#kb-local-dir").value.trim(),
-    syncIntervalSeconds: Number(document.querySelector("#kb-interval").value),
-    maxNotes: Number(document.querySelector("#kb-max-notes").value),
-    maxCharsPerNote: Number(document.querySelector("#kb-max-chars").value),
-    requireApproved: document.querySelector("#kb-approved").checked,
-  });
   settings.caseManagement = {
+    ...settings.caseManagement,
     autoRun: document.querySelector("#case-auto-run").checked,
-    autoSend: document.querySelector("#case-auto-send").checked,
     ownerIntermediateItems: document.querySelector(
       "#case-owner-intermediate-items",
     ).checked,
@@ -745,10 +651,26 @@ function readAssistantForm() {
   settings.pad.requireWriteConfirmation = document.querySelector("#pad-write-confirm").checked;
 }
 
+function readKnowledgeForm() {
+  if (!document.querySelector("#kb-enabled")) return;
+  Object.assign(settings.knowledgeBase, {
+    enabled: document.querySelector("#kb-enabled").checked,
+    remote: document.querySelector("#kb-remote").value.trim(),
+    branch: document.querySelector("#kb-branch").value.trim(),
+    localDir: document.querySelector("#kb-local-dir").value.trim(),
+    syncIntervalSeconds: Number(document.querySelector("#kb-interval").value),
+    maxNotes: Number(document.querySelector("#kb-max-notes").value),
+    maxCharsPerNote: Number(document.querySelector("#kb-max-chars").value),
+    requireApproved: document.querySelector("#kb-approved").checked,
+  });
+}
+
 function readCurrentForm() {
   if (activeView === "settings") {
     readAccountForm();
     readAssistantForm();
+  } else if (activeView === "knowledge") {
+    readKnowledgeForm();
   }
 }
 
@@ -840,9 +762,22 @@ document.addEventListener("change", (event) => {
   }
 });
 
+document.addEventListener("toggle", (event) => {
+  const key = event.target.dataset?.settingsFold;
+  if (!key) return;
+  if (event.target.open) settingsFoldOpen.add(key);
+  else settingsFoldOpen.delete(key);
+}, true);
+
 document.addEventListener("click", async (event) => {
   const nav = event.target.closest("[data-view]");
   if (nav) {
+    if (
+      activeView === "knowledge" &&
+      nav.dataset.view !== "knowledge" &&
+      knowledgeDirty &&
+      !confirm("当前知识文档尚未保存，仍要离开吗？")
+    ) return;
     readCurrentForm();
     activeView = nav.dataset.view;
     history.replaceState(null, "", `#${activeView}`);
@@ -1055,12 +990,30 @@ document.addEventListener("click", async (event) => {
       casePage += 1;
       selectedCase = null;
       await refreshCases(false);
-    } else if (action === "workers-paused") {
+    } else if (action === "workers-toggle") {
+      readCurrentForm();
       await api("/api/admin/workers/pause", {
         method: "POST",
-        body: JSON.stringify({ paused: event.target.checked }),
+        body: JSON.stringify({ paused: !event.target.checked }),
       });
       await refreshCases(false);
+      showNotice(event.target.checked ? "Workers 已开启" : "Workers 已暂停");
+    } else if (action === "auto-reply-toggle") {
+      if (dirty) {
+        render();
+        throw new Error("请先保存当前配置");
+      }
+      const enabled = event.target.checked;
+      settings = (
+        await api("/api/admin/settings", {
+          method: "PUT",
+          body: JSON.stringify({
+            caseManagement: { autoSend: enabled },
+          }),
+        })
+      ).settings;
+      showNotice(enabled ? "Auto reply 已开启" : "Auto reply 已关闭");
+      render();
     }
   } catch (error) {
     showNotice(error.message, true);
@@ -1130,8 +1083,8 @@ document.querySelector("#save-button").addEventListener("click", async () => {
 
 document.querySelector("#refresh-button").addEventListener("click", () => {
   readCurrentForm();
-  if (dirty) {
-    showNotice("存在未保存配置", true);
+  if (dirty || knowledgeDirty || agentDirty) {
+    showNotice("存在未保存内容", true);
     return;
   }
   load().catch((error) => showNotice(error.message, true));
