@@ -28,14 +28,23 @@ test("admin header owns worker and auto reply controls", () => {
   assert.doesNotMatch(javascript, /id="case-auto-send"/);
 });
 
-test("knowledge is independent and sensitive settings default closed", () => {
+test("knowledge editing is independent and knowledge configuration lives in settings", () => {
   assert.match(javascript, /function renderKnowledge\(\)/);
+  assert.match(javascript, /function knowledgeSettingsMarkup\(\)/);
   assert.match(javascript, /KB 路径与同步/);
+  assert.match(javascript, /data-settings-fold="knowledge"/);
+  assert.match(javascript, /\$\{knowledgeSettingsMarkup\(\)\}/);
+  const knowledgeView = javascript.slice(
+    javascript.indexOf("function renderKnowledge()"),
+    javascript.indexOf("function renderSettings()"),
+  );
+  assert.doesNotMatch(knowledgeView, /KB 路径与同步/);
+  assert.match(knowledgeView, /data-action="new-kb"/);
   assert.match(javascript, /data-settings-fold="accounts"/);
   assert.match(javascript, /data-settings-fold="agents"/);
   assert.match(javascript, /data-settings-fold="assistant"/);
   assert.doesNotMatch(
     javascript,
-    /data-settings-fold="(?:accounts|agents|assistant)"\s+open/,
+    /data-settings-fold="(?:accounts|knowledge|agents|assistant)"\s+open/,
   );
 });

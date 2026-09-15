@@ -485,14 +485,19 @@ function assistantMarkup() {
     </div>`;
 }
 
-function renderKnowledge() {
+function knowledgeSettingsMarkup() {
   const kb = settings.knowledgeBase;
-  content.innerHTML = `
-    <div class="knowledge-page">
-      <section class="settings-card knowledge-config">
-        <div class="section-head"><div><h2>KB 路径与同步</h2><p>${status.knowledgeBase?.ready ? `${status.knowledgeBase.noteCount} 篇文档` : "未同步"}</p></div><div class="inline-actions"><button class="button secondary" data-action="new-kb"><i data-lucide="plus"></i><span>新建文档</span></button><button class="button secondary" data-action="sync-kb"><i data-lucide="cloud"></i><span>立即同步</span></button></div></div>
+  const kbStatus = status.knowledgeBase || {};
+  const summary = kbStatus.ready
+    ? `${Number(kbStatus.noteCount || 0)} 篇文档 · ${time(kbStatus.lastSyncAt)}`
+    : kbStatus.lastError || "尚未同步";
+  return `
+    <details class="settings-card settings-fold" data-settings-fold="knowledge" ${settingsFoldOpen.has("knowledge") ? "open" : ""}>
+      <summary><span><strong>知识库</strong><small>${escapeHtml(summary)}</small></span></summary>
+      <div class="settings-card-body">
+        <div class="section-head"><div><h2>KB 路径与同步</h2><p>配置 Markdown 来源、检索范围与自动同步</p></div><button class="button secondary" data-action="sync-kb"><i data-lucide="cloud"></i><span>立即同步</span></button></div>
         ${toggle("启用知识库", "kb-enabled", kb.enabled, "检索相关 Markdown 并注入助手上下文")}
-        <div class="form-grid knowledge-config-grid">
+        <div class="form-grid three">
           ${field("Git Remote", "kb-remote", kb.remote, { full: true })}
           ${field("分支", "kb-branch", kb.branch)}
           ${field("本地目录", "kb-local-dir", kb.localDir)}
@@ -501,10 +506,19 @@ function renderKnowledge() {
           ${field("单篇字符上限", "kb-max-chars", kb.maxCharsPerNote, { type: "number" })}
         </div>
         ${toggle("仅使用 approved 文档", "kb-approved", kb.requireApproved, "Frontmatter 需要 approved: true")}
-      </section>
+      </div>
+    </details>`;
+}
+
+function renderKnowledge() {
+  content.innerHTML = `
+    <div class="knowledge-page">
       <div class="knowledge-studio">
         <aside class="knowledge-list">
-          <div class="knowledge-list-head"><strong>Markdown</strong><span>${knowledgeDocuments.length}</span></div>
+          <div class="knowledge-list-head">
+            <span><strong>Markdown</strong><small>${knowledgeDocuments.length}</small></span>
+            <button class="button secondary icon-only" data-action="new-kb" title="新建文档"><i data-lucide="plus"></i></button>
+          </div>
           ${knowledgeDocuments.map((document) => `
             <button class="knowledge-item ${selectedKnowledge?.file === document.file ? "active" : ""}" data-kb-file="${escapeHtml(document.file)}">
               <i data-lucide="file-text"></i>
@@ -536,6 +550,7 @@ function renderSettings() {
   content.innerHTML = `
     <div class="settings-panel">
       ${accountsMarkup()}
+      ${knowledgeSettingsMarkup()}
       ${assistantMarkup()}
     </div>`;
 }
@@ -580,7 +595,7 @@ function render() {
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.view === activeView);
   });
-  const configurable = activeView === "settings" || activeView === "knowledge";
+  const configurable = activeView === "settings";
   document.querySelector("#save-button").classList.toggle("hidden", !configurable);
   saveState.classList.toggle("hidden", !configurable);
   if (!settings || !status) {
@@ -668,9 +683,8 @@ function readKnowledgeForm() {
 function readCurrentForm() {
   if (activeView === "settings") {
     readAccountForm();
-    readAssistantForm();
-  } else if (activeView === "knowledge") {
     readKnowledgeForm();
+    readAssistantForm();
   }
 }
 
@@ -856,6 +870,8 @@ document.addEventListener("click", async (event) => {
       showNotice(result.source.ready ? "连接检测通过" : `连接未就绪：${result.source.lastError || result.source.state}`);
       await load();
     } else if (action === "sync-kb") {
+      readKnowledgeForm();
+      if (dirty) throw new Error("请先保存配置");
       if (knowledgeDirty) throw new Error("请先保存当前知识文档");
       const result = await api("/api/admin/kb/sync", { method: "POST" });
       showNotice(result.knowledgeBase.ready ? "知识库同步完成" : `同步失败：${result.knowledgeBase.lastError}`);
