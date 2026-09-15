@@ -21,6 +21,7 @@ import {
   Save,
   Send,
   Server,
+  Settings,
   ShieldCheck,
   Trash2,
   UserRound,
@@ -53,6 +54,7 @@ const iconSet = {
   Save,
   Send,
   Server,
+  Settings,
   ShieldCheck,
   Trash2,
   UserRound,
@@ -62,10 +64,9 @@ const iconSet = {
 };
 
 const views = {
-  cases: ["WORKSPACE", "微信 Case"],
+  cases: ["CASES", "微信 Case"],
   overview: ["SYSTEM", "运行概览"],
-  accounts: ["INGRESS", "微信账号"],
-  assistant: ["INTELLIGENCE", "助手与知识库"],
+  settings: ["CONFIG", "设置"],
   release: ["RUNTIME", "运行与发布"],
 };
 
@@ -443,11 +444,11 @@ function toggle(label, id, checked, detail) {
   return `<div class="toggle-row"><div class="toggle-copy"><strong>${label}</strong><span>${detail}</span></div><label class="switch"><input id="${id}" type="checkbox" ${checked ? "checked" : ""} data-dirty><span></span></label></div>`;
 }
 
-function renderAccounts() {
+function accountsMarkup() {
   const sources = settings.pad.sources || [];
   const source = sources[selectedSource];
-  content.innerHTML = `
-    <div class="section">
+  return `
+    <div class="section settings-card">
       <div class="section-head"><div><h2>账号列表</h2><p>${sources.length} 个接入账号</p></div><button class="button secondary" data-action="add-source"><i data-lucide="plus"></i><span>添加账号</span></button></div>
       <div class="split-layout">
         <div class="account-list">
@@ -503,19 +504,19 @@ function accountEditor(source) {
     </div>`;
 }
 
-function renderAssistant() {
+function assistantMarkup() {
   const assistant = settings.assistant;
   const kb = settings.knowledgeBase;
   const caseManagement = settings.caseManagement || {};
   const codex = status.codex || {};
   const effective = codex.effective || {};
-  content.innerHTML = `
-    <div class="section">
+  return `
+    <div class="section settings-card">
       <div class="section-head"><div><h2>AGENTS.md</h2><p>${escapeHtml(agentDocument?.path || status.agentFile || "当前工作目录")}</p></div><button class="button primary" data-action="save-agent" ${agentDirty ? "" : "disabled"}><i data-lucide="save"></i><span>保存身份与权限</span></button></div>
       <textarea id="agent-editor" class="document-editor" spellcheck="false">${escapeHtml(agentDocument?.content || "")}</textarea>
       <p class="editor-note">这是当前实例的最高层个人策略。System Prompt、Skill 和 KB 可以补充，但不能扩大这里的权限。</p>
     </div>
-    <div class="section">
+    <div class="section settings-card">
       <div class="section-head"><div><h2>助手后端</h2><p>当前模式：${escapeHtml(assistant.mode)}</p></div></div>
       <div class="form-grid three">
         <div class="field"><label for="assistant-mode">运行模式</label><select id="assistant-mode" data-dirty>
@@ -542,7 +543,7 @@ function renderAssistant() {
       <div class="release-row"><span>本机配置</span><strong>${codex.configPresent ? "已读取" : "未找到"} · ${codex.authPresent ? "认证已就绪" : "认证未就绪"}</strong></div>
       <div class="release-row"><span>配置更新时间</span><code>${escapeHtml(codex.configMtime || "未知")}</code></div>
     </div>
-    <div class="section">
+    <div class="section settings-card">
       <div class="section-head"><div><h2>Case 自动化</h2><p>入站先形成 Case，再由 worker 生成 draft</p></div></div>
       ${toggle("自动运行 Worker", "case-auto-run", caseManagement.autoRun !== false, "新消息进入后自动生成 draft")}
       ${toggle("自动发送 Draft", "case-auto-send", caseManagement.autoSend !== false, "生成成功后立即回复微信")}
@@ -551,7 +552,7 @@ function renderAssistant() {
         ${field("Worker 并发", "case-worker-concurrency", caseManagement.workerConcurrency || 2, { type: "number" })}
       </div>
     </div>
-    <div class="section">
+    <div class="section settings-card">
       <div class="section-head"><div><h2>个人 KB Cloud</h2><p>${status.knowledgeBase?.ready ? `${status.knowledgeBase.noteCount} 篇文档` : "未同步"}</p></div><div class="inline-actions"><button class="button secondary" data-action="new-kb"><i data-lucide="plus"></i><span>新建文档</span></button><button class="button secondary" data-action="sync-kb"><i data-lucide="cloud"></i><span>立即同步</span></button></div></div>
       ${toggle("启用知识库", "kb-enabled", kb.enabled, "检索相关 Markdown 并注入助手上下文")}
       <div class="form-grid">
@@ -591,13 +592,21 @@ function renderAssistant() {
         </div>
       </div>
     </div>
-    <div class="section">
+    <div class="section settings-card">
       <h2 style="margin-bottom:16px">发送控制</h2>
       <div class="field"><label>发送模式</label><div class="segmented">
         <button data-action="outbound-mode" data-mode="dry-run" class="${settings.outboundMode !== "live" ? "active" : ""}">演练</button>
         <button data-action="outbound-mode" data-mode="live" class="${settings.outboundMode === "live" ? "active" : ""}">正式</button>
       </div></div>
       ${toggle("网关写操作确认", "pad-write-confirm", settings.pad.requireWriteConfirmation, "请求附带确认标记与唯一请求 ID")}
+    </div>`;
+}
+
+function renderSettings() {
+  content.innerHTML = `
+    <div class="settings-panel">
+      ${accountsMarkup()}
+      ${assistantMarkup()}
     </div>`;
 }
 
@@ -612,9 +621,9 @@ function renderRelease() {
   content.innerHTML = `
     <div class="section">
       <div class="section-head"><div><h2>运行信息</h2><p>本机 Webot 服务</p></div></div>
-      <div class="release-row"><span>版本</span><strong>${escapeHtml(status.version)}</strong></div>
+      <div class="release-row"><span>版本标签</span><strong>v${escapeHtml(status.version)}</strong></div>
       <div class="release-row"><span>运行方式</span><strong>${runtimeLabel}</strong></div>
-      ${sourceMode ? `<div class="release-row"><span>源码版本</span><code>${escapeHtml(status.runtime?.sourceRevision || "unknown")}</code></div>` : ""}
+      ${sourceMode ? `<div class="release-row"><span>Commit ID</span><code>${escapeHtml(status.runtime?.sourceRevision || "unknown")}</code></div>` : ""}
       <div class="release-row"><span>监听地址</span><code>http://127.0.0.1:18120</code></div>
       <div class="release-row"><span>数据目录</span><code>${escapeHtml(status.dataDir)}</code></div>
       <div class="release-row"><span>配置文件</span><code>${escapeHtml(status.settingsFile)}</code></div>
@@ -635,22 +644,36 @@ function renderRelease() {
     </div>`;
 }
 
+function renderRuntimeIdentity() {
+  const build = document.querySelector("#runtime-build");
+  if (!build || !status) return;
+  const revision = String(status.runtime?.sourceRevision || "");
+  build.textContent =
+    `v${status.version || "unknown"}${revision ? ` · ${revision.slice(0, 8)}` : ""}`;
+  build.title = revision
+    ? `v${status.version}\n${revision}`
+    : `v${status.version || "unknown"}`;
+}
+
 function render() {
   const [eyebrow, title] = views[activeView];
   document.body.classList.toggle("view-cases", activeView === "cases");
+  document.body.classList.toggle("view-settings", activeView === "settings");
   content.classList.toggle("case-content", activeView === "cases");
   document.querySelector("#view-eyebrow").textContent = eyebrow;
   document.querySelector("#view-title").textContent = title;
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.view === activeView);
   });
+  document.querySelector("#save-button").classList.toggle("hidden", activeView !== "settings");
+  saveState.classList.toggle("hidden", activeView !== "settings");
   if (!settings || !status) {
     content.innerHTML = `<div class="empty"><div><i data-lucide="refresh-cw"></i><div>正在读取运行状态</div></div></div>`;
   } else if (activeView === "cases") renderCases();
   else if (activeView === "overview") renderOverview();
-  else if (activeView === "accounts") renderAccounts();
-  else if (activeView === "assistant") renderAssistant();
+  else if (activeView === "settings") renderSettings();
   else renderRelease();
+  renderRuntimeIdentity();
   icons();
   if (activeView === "cases" && selectedCase) {
     restoreCaseViewState(selectedCase.case_id);
@@ -723,8 +746,10 @@ function readAssistantForm() {
 }
 
 function readCurrentForm() {
-  if (activeView === "accounts") readAccountForm();
-  if (activeView === "assistant") readAssistantForm();
+  if (activeView === "settings") {
+    readAccountForm();
+    readAssistantForm();
+  }
 }
 
 async function load() {
