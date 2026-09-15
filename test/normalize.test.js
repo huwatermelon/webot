@@ -120,6 +120,32 @@ test("normalizes top-level WeChatPad gateway events", () => {
   assert.equal(message.text, "webot ping");
 });
 
+test("normalizes mentions from the current WeChatPad message context", () => {
+  const [message] = normalizePadEnvelope({
+    id: "group-event-1",
+    new_msg_id: "group-message-1",
+    type: 1,
+    direction: "incoming",
+    is_group: true,
+    conversation_id: "52420747220@chatroom",
+    sender_id: "owner_wxid",
+    recipient_id: "52420747220@chatroom",
+    content: "在吗",
+    created_at: 1_789_116_782,
+    message_context: {
+      mentioned_user_ids: ["wxid_small"],
+    },
+  }, {
+    id: "small-opt",
+    displayName: "小号",
+    selfId: "wxid_small",
+  });
+
+  assert.equal(message.chatType, "group");
+  assert.equal(message.chatId, "52420747220@chatroom");
+  assert.deepEqual(message.mentions, ["wxid_small"]);
+});
+
 test("normalizes appmsg type 6 as a WeChat file card", () => {
   const [message] = normalizePadEnvelope({
     NewMsgId: "file-message-1",

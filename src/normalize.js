@@ -168,6 +168,35 @@ function pairKey(first, second) {
     .join("--");
 }
 
+function padMentionIds(message) {
+  const contexts = [
+    message.message_context,
+    message.MessageContext,
+    message.MsgSource,
+    message.msg_source,
+    message.GoFields?.MsgSource,
+    message.go_fields?.msg_source,
+  ].filter((value) => value && typeof value === "object");
+  const values = [
+    message.AtUserList,
+    message.at_user_list,
+    ...contexts.flatMap((context) => [
+      context.MentionedUserIDs,
+      context.mentioned_user_ids,
+      context.AtUserList,
+      context.at_user_list,
+    ]),
+  ];
+  return [
+    ...new Set(
+      values
+        .flatMap((value) => Array.isArray(value) ? value : [])
+        .map(scalar)
+        .filter(Boolean),
+    ),
+  ];
+}
+
 function normalizePadMessage(message, sourceValue) {
   const source =
     typeof sourceValue === "string"
@@ -276,18 +305,7 @@ function normalizePadMessage(message, sourceValue) {
     replyTarget: room || peerId,
     text: split.text.trim(),
     attachments: content.attachments,
-    mentions: [
-      ...new Set(
-        [
-          ...(Array.isArray(message.AtUserList) ? message.AtUserList : []),
-          ...(Array.isArray(message.at_user_list)
-            ? message.at_user_list
-            : []),
-        ]
-          .map(scalar)
-          .filter(Boolean),
-      ),
-    ],
+    mentions: padMentionIds(message),
   };
 }
 
