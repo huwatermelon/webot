@@ -38,6 +38,21 @@ function localRequest(request) {
   );
 }
 
+function adminHtml(application) {
+  let revision = "";
+  try {
+    revision = String(application?.status()?.runtime?.sourceRevision || "");
+  } catch {
+    revision = "";
+  }
+  const escaped = revision
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+  return ADMIN_HTML.replace("__WEBOT_RUNTIME_REVISION__", escaped);
+}
+
 export function createServer({
   application,
   config,
@@ -68,7 +83,12 @@ export function createServer({
         return;
       }
       if (request.method === "GET" && url.pathname === "/") {
-        respond(response, 200, ADMIN_HTML, "text/html; charset=utf-8");
+        respond(
+          response,
+          200,
+          adminHtml(application),
+          "text/html; charset=utf-8",
+        );
         return;
       }
       if (request.method === "GET" && url.pathname === "/assets/admin.css") {

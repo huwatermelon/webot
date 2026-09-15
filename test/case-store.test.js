@@ -989,6 +989,39 @@ test("routes named sessions to independent worker and history state", async () =
   const projectReceived = await manager.receive(projectTask);
   assert.notEqual(projectReceived.caseId, created.caseId);
   await waitFor(() => manager.status().active === 0);
+  const casePage = caseStore.casePage();
+  assert.equal(casePage.total, 1);
+  assert.deepEqual(
+    casePage.cases.map((item) => item.case_id),
+    [created.caseId],
+  );
+  assert.deepEqual(
+    casePage.cases[0].caseSessionOptions.map((item) => ({
+      name: item.name,
+      targetCaseId: item.targetCaseId,
+      active: item.active,
+      exists: item.exists,
+    })),
+    [
+      {
+        name: "project-a",
+        targetCaseId: projectReceived.caseId,
+        active: true,
+        exists: true,
+      },
+      {
+        name: "main",
+        targetCaseId: created.caseId,
+        active: false,
+        exists: true,
+      },
+    ],
+  );
+  const projectDetail = caseStore.detail(projectReceived.caseId);
+  assert.equal(projectDetail.title, "Owner");
+  assert.equal(projectDetail.namedSession.name, "project-a");
+  assert.equal(projectDetail.namedSession.scopeCaseId, created.caseId);
+  assert.equal(projectDetail.caseSessionOptions.length, 2);
   assert.equal(providerCases[0].caseId, projectReceived.caseId);
   assert.deepEqual(
     providerCases[0].history.map(({ role, content }) => ({ role, content })),

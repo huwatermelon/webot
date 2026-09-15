@@ -57,8 +57,12 @@ let casePage = 0;
 let caseTotal = 0;
 let caseHasMore = false;
 const casePageSize = 50;
+const pageRuntimeRevision =
+  document.querySelector('meta[name="webot-runtime-revision"]')?.content || "";
+let runtimeUpdateNoticeRevision = "";
 const caseHistoryExpanded = new Map();
 const caseViewStates = new Map();
+const caseSessionSelections = new Map();
 let agentDocument = null;
 let agentDirty = false;
 const settingsFoldOpen = new Set();
@@ -194,6 +198,39 @@ function caseStatusLabel(value) {
   }[value] || value || "未运行";
 }
 
+function caseRootId(item) {
+  return item?.namedSession?.scopeCaseId || item?.case_id || "";
+}
+
+function caseSessionTarget(item) {
+  const options = item.caseSessionOptions || [];
+  const rootCaseId = caseRootId(item);
+  const stored = caseSessionSelections.get(rootCaseId);
+  if (stored && options.some((option) => option.targetCaseId === stored && option.exists)) {
+    return stored;
+  }
+  if (
+    selectedCase &&
+    caseRootId(selectedCase) === rootCaseId &&
+    options.some((option) => option.targetCaseId === selectedCase.case_id)
+  ) {
+    return selectedCase.case_id;
+  }
+  return (
+    options.find((option) => option.active && option.exists)?.targetCaseId ||
+    options.find((option) => option.key === "main" && option.exists)?.targetCaseId ||
+    item.case_id
+  );
+}
+
+function caseSessionSummary(item, targetCaseId) {
+  return (
+    (item.caseSessionOptions || []).find(
+      (option) => option.targetCaseId === targetCaseId,
+    ) || null
+  );
+}
+
 function captureCaseViewState() {
   if (!selectedCase) return;
   const scroll = document.querySelector(".case-detail-scroll");
@@ -238,7 +275,13 @@ function renderCaseDetail(item) {
   ].join(" · ");
   return `
     <div class="case-detail-head">
-      <div class="case-detail-title"><h2>${escapeHtml(item.title)}</h2><p class="mono">${escapeHtml(item.case_id)}</p></div>
+      <div class="case-detail-title">
+        <h2>${escapeHtml(item.title)}</h2>
+        ${item.namedSession
+          ? `<span class="case-session-label">Session: ${escapeHtml(item.namedSession.name)}${item.namedSession.active ? " · active" : ""}</span>`
+          : ""}
+        <p class="mono">${escapeHtml(item.case_id)}</p>
+      </div>
       <div class="inline-actions">
         ${running
           ? `<button class="button danger" data-action="stop-case" data-case-id="${escapeHtml(item.case_id)}">停止 Worker</button>`
@@ -325,13 +368,33 @@ function renderCases() {
           </div>
         </div>
         <div class="case-list">
-          ${cases.map((item) => `
-            <button class="case-item ${selectedCase?.case_id === item.case_id ? "active" : ""}" data-case-select="${escapeHtml(item.case_id)}">
-              <span class="case-item-head"><strong>${escapeHtml(item.title)}</strong>${badge(caseStatusLabel(item.status), caseTone(item.status))}</span>
-              <span class="case-preview">${escapeHtml(item.last_message || "")}</span>
-              <span class="case-meta">${escapeHtml(item.source_name)} · ${time(item.last_message_at)} · ${Number(item.draft_count || 0)} drafts</span>
-            </button>
-          `).join("") || `<div class="empty compact"><div>尚无微信 Case</div></div>`}
+          ${cases.map((item) => {
+            const targetCaseId = caseSessionTarget(item);
+            const summary = caseSessionSummary(item, targetCaseId);
+            const itemStatus = summary?.caseStatus || item.status;
+            const active = selectedCase && caseRootId(selectedCase) === item.case_id;
+            const sessionOptions = item.caseSessionOptions || [];
+            return `
+              <div class="case-item ${active ? "active" : ""}">
+                <button class="case-item-main" data-case-select="${escapeHtml(targetCaseId)}">
+                  <span class="case-item-head"><strong>${escapeHtml(item.title)}</strong>${badge(caseStatusLabel(itemStatus), caseTone(itemStatus))}</span>
+                  <span class="case-preview">${escapeHtml(summary?.lastMessage || item.last_message || "")}</span>
+                  <span class="case-meta">${escapeHtml(item.source_name)} · ${time(summary?.lastMessageAt || item.last_message_at)} · ${Number(summary?.draftCount ?? item.draft_count ?? 0)} drafts</span>
+                </button>
+                ${sessionOptions.length > 1
+                  ? `<label class="case-session-control">
+                      <span>Session</span>
+                      <select class="case-session-select" data-case-session="${escapeHtml(item.case_id)}" aria-label="${escapeHtml(item.title)} Session">
+                        ${sessionOptions.map((option) => `
+                          <option value="${escapeHtml(option.targetCaseId)}" ${option.targetCaseId === targetCaseId ? "selected" : ""} ${option.exists ? "" : "disabled"}>
+                            ${escapeHtml(option.name)}${option.active ? " · active" : ""}${option.caseStatus ? ` · ${escapeHtml(caseStatusLabel(option.caseStatus))}` : ""}
+                          </option>
+                        `).join("")}
+                      </select>
+                    </label>`
+                  : ""}
+              </div>`;
+          }).join("") || `<div class="empty compact"><div>尚无微信 Case</div></div>`}
         </div>
         <div class="case-pagination">
           <button class="button secondary compact-button" data-action="case-prev" ${casePage <= 0 ? "disabled" : ""}>上一页</button>
@@ -726,7 +789,7 @@ async function load() {
   knowledgeDirty = false;
   if (
     selectedCase &&
-    !cases.some((item) => item.case_id === selectedCase.case_id)
+    !cases.some((item) => item.case_id === caseRootId(selectedCase))
   ) {
     selectedCase = null;
   }
@@ -769,7 +832,18 @@ document.addEventListener("input", (event) => {
   }
 });
 
-document.addEventListener("change", (event) => {
+document.addEventListener("change", async (event) => {
+  if (event.target.matches("[data-case-session]")) {
+    const rootCaseId = event.target.dataset.caseSession;
+    const targetCaseId = event.target.value;
+    caseSessionSelections.set(rootCaseId, targetCaseId);
+    try {
+      await loadCase(targetCaseId);
+    } catch (error) {
+      showNotice(error.message, true);
+    }
+    return;
+  }
   if (event.target.matches("[data-dirty]")) {
     dirty = true;
     saveState.textContent = "未保存";
@@ -1071,11 +1145,31 @@ async function refreshCases(includeDetail = false) {
   render();
 }
 
+async function reloadForRuntimeRevisionChange() {
+  const nextStatus = await api("/api/admin/status");
+  const revision = String(nextStatus.runtime?.sourceRevision || "");
+  status = nextStatus;
+  renderRuntimeIdentity();
+  if (!pageRuntimeRevision || !revision || revision === pageRuntimeRevision) return;
+  if (dirty || knowledgeDirty || agentDirty) {
+    if (runtimeUpdateNoticeRevision !== revision) {
+      runtimeUpdateNoticeRevision = revision;
+      showNotice("Webot 已加载新版本；请保存当前编辑后刷新页面", true);
+    }
+    return;
+  }
+  window.location.reload();
+}
+
 window.setInterval(() => {
   if (activeView === "cases" && !dirty) {
     refreshCases(Boolean(selectedCase)).catch(() => {});
   }
 }, 3000);
+
+window.setInterval(() => {
+  reloadForRuntimeRevisionChange().catch(() => {});
+}, 5000);
 
 document.querySelector("#save-button").addEventListener("click", async () => {
   try {

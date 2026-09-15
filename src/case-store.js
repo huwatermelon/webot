@@ -373,6 +373,42 @@ export class CaseStore {
     return this.casePage({ limit }).cases;
   }
 
+  caseSessionOptions(caseId) {
+    const selected = this.sessionForTarget(caseId);
+    if (!selected) return [];
+    const state = this.db.prepare(`
+      SELECT c.title, c.status AS case_status, c.last_message_at,
+        c.last_message_id,
+        (SELECT text FROM messages WHERE id=c.last_message_id) AS last_message,
+        (SELECT COUNT(*) FROM drafts d WHERE d.case_id=c.case_id) AS draft_count,
+        w.status AS worker_status,
+        w.last_processed_message_id
+      FROM cases c
+      LEFT JOIN worker_sessions w ON w.case_id=c.case_id
+      WHERE c.case_id=?
+    `);
+    return listSessions(this.db, selected.scope_case_id).map((session) => {
+      const current = state.get(session.target_case_id) || null;
+      return {
+        key: session.session_id,
+        name: session.name,
+        targetCaseId: session.target_case_id,
+        active: Boolean(session.is_active),
+        selected: session.target_case_id === caseId,
+        exists: Boolean(current),
+        title: current?.title || "",
+        caseStatus: current?.case_status || "",
+        workerStatus: current?.worker_status || "",
+        pending:
+          Number(current?.last_message_id || 0) >
+          Number(current?.last_processed_message_id || 0),
+        lastMessage: current?.last_message || "",
+        lastMessageAt: Number(current?.last_message_at || 0),
+        draftCount: Number(current?.draft_count || 0),
+      };
+    });
+  }
+
   casePage(options = {}) {
     const limit = Math.min(
       Math.max(Number(options.limit) || 50, 1),
@@ -380,17 +416,54 @@ export class CaseStore {
     );
     const offset = Math.max(Number(options.offset) || 0, 0);
     const total = Number(
-      this.db.prepare("SELECT COUNT(*) AS count FROM cases").get().count || 0,
+      this.db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM cases c
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM assistant_sessions managed
+          WHERE managed.target_case_id=c.case_id
+            AND managed.session_id!='main'
+        )
+      `).get().count || 0,
     );
     const cases = this.db.prepare(`
+      WITH managed_scope_state AS (
+        SELECT root.target_case_id AS root_case_id,
+          MAX(member_case.updated_at) AS latest_activity_at,
+          MAX(CASE WHEN member_worker.status='running' THEN 1 ELSE 0 END)
+            AS has_running_session
+        FROM assistant_sessions root
+        JOIN assistant_sessions member
+          ON member.scope_case_id=root.scope_case_id
+         AND member.deleted_at=0
+        LEFT JOIN cases member_case
+          ON member_case.case_id=member.target_case_id
+        LEFT JOIN worker_sessions member_worker
+          ON member_worker.case_id=member.target_case_id
+        WHERE root.session_id='main' AND root.deleted_at=0
+        GROUP BY root.target_case_id
+      )
       SELECT c.*,
         (SELECT text FROM messages WHERE id=c.last_message_id) AS last_message,
         (SELECT COUNT(*) FROM drafts d WHERE d.case_id=c.case_id) AS draft_count,
-        (SELECT status FROM worker_sessions w WHERE w.case_id=c.case_id) AS worker_status
+        (SELECT status FROM worker_sessions w WHERE w.case_id=c.case_id) AS worker_status,
+        COALESCE(scope.latest_activity_at, c.updated_at) AS managed_updated_at,
+        COALESCE(scope.has_running_session, 0) AS managed_session_running
       FROM cases c
-      ORDER BY c.updated_at DESC
+      LEFT JOIN managed_scope_state scope ON scope.root_case_id=c.case_id
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM assistant_sessions managed
+        WHERE managed.target_case_id=c.case_id
+          AND managed.session_id!='main'
+      )
+      ORDER BY managed_session_running DESC, managed_updated_at DESC
       LIMIT ? OFFSET ?
-    `).all(limit, offset);
+    `).all(limit, offset).map((item) => ({
+      ...item,
+      caseSessionOptions: this.caseSessionOptions(item.case_id),
+    }));
     return {
       cases,
       total,
@@ -497,6 +570,10 @@ export class CaseStore {
   detail(caseId, options = {}) {
     const value = this.caseRow(caseId);
     if (!value) return null;
+    const namedSession = this.sessionForTarget(caseId);
+    const rootCase = namedSession?.scope_case_id
+      ? this.caseRow(namedSession.scope_case_id)
+      : null;
     const expanded = options.expanded === true;
     const messageLimit = expanded ? 1000 : 40;
     const draftLimit = expanded ? 200 : 8;
@@ -521,9 +598,20 @@ export class CaseStore {
     const progress = this.progress(caseId, progressLimit);
     return {
       ...value,
+      title: rootCase?.title || value.title,
       messages,
       drafts,
       progress,
+      namedSession: namedSession
+        ? {
+            key: namedSession.session_id,
+            name: namedSession.name,
+            scopeCaseId: namedSession.scope_case_id,
+            targetCaseId: namedSession.target_case_id,
+            active: Boolean(namedSession.is_active),
+          }
+        : null,
+      caseSessionOptions: this.caseSessionOptions(caseId),
       workerSession: this.db
         .prepare("SELECT * FROM worker_sessions WHERE case_id=?")
         .get(caseId) || null,

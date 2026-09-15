@@ -81,7 +81,10 @@ test("serves local AGENTS and knowledge editor APIs", async () => {
       WEBOT_PORT: "0",
     }),
     status() {
-      return { ok: true };
+      return {
+        ok: true,
+        runtime: { sourceRevision: "1234567890abcdef" },
+      };
     },
     settings() {
       return {};
@@ -126,6 +129,12 @@ test("serves local AGENTS and knowledge editor APIs", async () => {
   const address = await app.start();
   const base = `http://127.0.0.1:${address.port}`;
 
+  const adminHtml = await fetch(base).then((response) => response.text());
+  assert.match(
+    adminHtml,
+    /name="webot-runtime-revision" content="1234567890abcdef"/,
+  );
+  assert.doesNotMatch(adminHtml, /__WEBOT_RUNTIME_REVISION__/);
   assert.equal(
     (await fetch(`${base}/api/admin/agent`).then((response) => response.json()))
       .document.hash,

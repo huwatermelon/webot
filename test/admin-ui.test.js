@@ -28,6 +28,15 @@ test("admin header owns worker and auto reply controls", () => {
   assert.doesNotMatch(javascript, /id="case-auto-send"/);
 });
 
+test("case workspace groups named sessions and reloads on runtime revision changes", () => {
+  assert.match(html, /name="webot-runtime-revision"/);
+  assert.match(javascript, /caseSessionOptions/);
+  assert.match(javascript, /data-case-session/);
+  assert.match(javascript, /class="case-session-select"/);
+  assert.match(javascript, /reloadForRuntimeRevisionChange/);
+  assert.match(javascript, /window\.location\.reload\(\)/);
+});
+
 test("knowledge editing is independent and knowledge configuration lives in settings", () => {
   assert.match(javascript, /function renderKnowledge\(\)/);
   assert.match(javascript, /function knowledgeSettingsMarkup\(\)/);
