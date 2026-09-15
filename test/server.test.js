@@ -87,7 +87,13 @@ test("serves local AGENTS and knowledge editor APIs", async () => {
       return {};
     },
     listCases() {
-      return [];
+      return {
+        cases: [],
+        total: 0,
+        limit: 50,
+        offset: 0,
+        hasMore: false,
+      };
     },
     caseManager: { status() { return {}; } },
     startConnectors() {},

@@ -44,6 +44,12 @@ Raw envelopes are not sent to the assistant backend. Normalized messages,
 Cases, worker sessions, progress events, drafts, and send results are persisted
 in `webot.sqlite`. Bounded assistant history remains in the session directory.
 
+Source deployments run Codex from the Webot repository so engineering tasks see
+the same code, Git state, and repository instructions as the service itself.
+Instance-specific identity and permissions remain in the private Webot data
+directory and are injected into every Codex turn; they are not committed to the
+source repository.
+
 ## Runtime Controls
 
 - `WEBOT_CHANNELS` selects which connectors start.
@@ -58,6 +64,9 @@ in `webot.sqlite`. Bounded assistant history remains in the session directory.
 - Worker execution and draft sending are separate persisted stages.
 - Workers can be paused globally, rerun per Case, or stopped while active.
 - Drafts can be sent automatically or reviewed and sent from the Case console.
+- The Case console uses independently scrolling list and detail panes. Case
+  summaries are paginated, while messages, drafts, and progress are loaded in a
+  bounded window and expanded only on demand.
 - Gateway queues and history keys include the source-defined conversation id.
 - Multi-account replies resolve credentials from the originating source.
 - Self-account pairs have explicit per-direction ingress permission.

@@ -79,6 +79,12 @@ let dirty = false;
 let cases = [];
 let workers = {};
 let selectedCase = null;
+let casePage = 0;
+let caseTotal = 0;
+let caseHasMore = false;
+const casePageSize = 50;
+const caseHistoryExpanded = new Map();
+const caseViewStates = new Map();
 let agentDocument = null;
 let agentDirty = false;
 let knowledgeDocuments = [];
@@ -221,91 +227,155 @@ function caseStatusLabel(value) {
   }[value] || value || "未运行";
 }
 
+function captureCaseViewState() {
+  if (!selectedCase) return;
+  const scroll = document.querySelector(".case-detail-scroll");
+  const panels = [...document.querySelectorAll("[data-case-panel]")];
+  caseViewStates.set(selectedCase.case_id, {
+    scrollTop: scroll?.scrollTop || 0,
+    knownPanels: panels.map((panel) => panel.dataset.casePanel),
+    openPanels: panels
+      .filter((panel) => panel.open)
+      .map((panel) => panel.dataset.casePanel),
+  });
+}
+
+function panelOpen(caseId, panel, fallback = false) {
+  const state = caseViewStates.get(caseId);
+  if (!state?.knownPanels?.includes(panel)) return fallback;
+  return state.openPanels.includes(panel);
+}
+
+function restoreCaseViewState(caseId) {
+  const state = caseViewStates.get(caseId);
+  const scroll = document.querySelector(".case-detail-scroll");
+  if (!state || !scroll) return;
+  requestAnimationFrame(() => {
+    scroll.scrollTop = state.scrollTop;
+  });
+}
+
 function renderCaseDetail(item) {
   const session = item.workerSession || {};
+  const window = item.displayWindow || {};
   const totalTokens =
     Number(session.input_tokens || 0) +
     Number(session.output_tokens || 0) +
     Number(session.reasoning_output_tokens || 0);
+  const running = session.status === "running";
+  const workerPanel = "worker";
+  const windowText = [
+    `消息 ${Number(window.messageShown || item.messages?.length || 0)} / ${Number(window.messageTotal || item.messages?.length || 0)}`,
+    `草稿 ${Number(window.draftShown || item.drafts?.length || 0)} / ${Number(window.draftTotal || item.drafts?.length || 0)}`,
+    `进度 ${Number(window.progressShown || item.progress?.length || 0)} / ${Number(window.progressTotal || item.progress?.length || 0)}`,
+  ].join(" · ");
   return `
     <div class="case-detail-head">
-      <div><h2>${escapeHtml(item.title)}</h2><p class="mono">${escapeHtml(item.case_id)}</p></div>
+      <div class="case-detail-title"><h2>${escapeHtml(item.title)}</h2><p class="mono">${escapeHtml(item.case_id)}</p></div>
       <div class="inline-actions">
-        ${session.status === "running"
-          ? `<button class="button danger" data-action="stop-case" data-case-id="${escapeHtml(item.case_id)}">停止</button>`
+        ${running
+          ? `<button class="button danger" data-action="stop-case" data-case-id="${escapeHtml(item.case_id)}">停止 Worker</button>`
           : `<button class="button secondary" data-action="run-case" data-case-id="${escapeHtml(item.case_id)}"><i data-lucide="play"></i><span>运行</span></button>`}
       </div>
     </div>
-    ${item.last_error ? `<div class="case-error">${escapeHtml(item.last_error)}</div>` : ""}
-    <div class="case-section">
-      <h3>Worker 会话</h3>
-      <div class="session-grid">
-        <span>状态<strong>${escapeHtml(caseStatusLabel(session.status))}</strong></span>
-        <span>运行次数<strong>${Number(session.run_count || 0)}</strong></span>
-        <span>Codex Session<strong class="mono">${escapeHtml(session.codex_session_id ? session.codex_session_id.slice(0, 12) : "尚未建立")}</strong></span>
-        <span>模型<strong>${escapeHtml(session.model || "跟随配置")}</strong></span>
-        <span>模型请求<strong>${Number(session.request_count || 0)}</strong></span>
-        <span>累计 Token<strong>${totalTokens.toLocaleString("zh-CN")}</strong></span>
-        <span>开始<strong>${time(session.started_at)}</strong></span>
-        <span>完成<strong>${time(session.finished_at)}</strong></span>
+    <div class="case-detail-scroll">
+      <div class="case-window">
+        <span>${escapeHtml(windowText)}</span>
+        ${(window.messageTruncated || window.draftTruncated || window.progressTruncated || window.expanded)
+          ? `<button class="button secondary compact-button" data-action="case-history" data-case-id="${escapeHtml(item.case_id)}" data-expanded="${window.expanded ? "1" : "0"}">${window.expanded ? "收起历史" : "展开历史"}</button>`
+          : ""}
       </div>
-      ${session.codex_session_id
-        ? `<div class="inline-actions session-actions"><button class="button secondary" data-action="reset-session" data-case-id="${escapeHtml(item.case_id)}"><i data-lucide="refresh-cw"></i><span>重置 Codex Session</span></button></div>`
-        : ""}
-      <div class="progress-list">
-        ${(item.progress || []).map((entry) => `<div class="progress-row ${escapeHtml(entry.level)}"><span>${time(entry.created_at)}</span><strong>${escapeHtml(entry.message)}</strong></div>`).join("") || `<div class="case-muted">暂无进度</div>`}
-      </div>
-    </div>
-    <div class="case-section">
-      <h3>回复草稿</h3>
-      ${(item.drafts || []).map((draft) => `
-        <article class="draft-block">
-          <div class="draft-head">
-            <span>${badge(caseStatusLabel(draft.status), draft.status === "sent" ? "good" : "warn")} · ${time(draft.created_at)}</span>
-            ${draft.status !== "sent" ? `<button class="button primary" data-action="send-draft" data-case-id="${escapeHtml(item.case_id)}" data-draft-id="${Number(draft.id)}"><i data-lucide="send"></i><span>发送</span></button>` : ""}
+      ${item.last_error ? `<div class="case-error">${escapeHtml(item.last_error)}</div>` : ""}
+      <details class="case-panel" data-case-panel="${workerPanel}" ${panelOpen(item.case_id, workerPanel, running) ? "open" : ""}>
+        <summary>
+          <span><strong>Worker 会话</strong><small>${escapeHtml(caseStatusLabel(session.status))} · ${Number(session.run_count || 0)} 次运行</small></span>
+          ${badge(caseStatusLabel(session.status), caseTone(session.status))}
+        </summary>
+        <div class="case-panel-body">
+          <div class="session-grid">
+            <span>Codex Session<strong class="mono">${escapeHtml(session.codex_session_id ? session.codex_session_id.slice(0, 12) : "尚未建立")}</strong></span>
+            <span>模型<strong>${escapeHtml(session.model || "跟随配置")}</strong></span>
+            <span>模型请求<strong>${Number(session.request_count || 0)}</strong></span>
+            <span>累计 Token<strong>${totalTokens.toLocaleString("zh-CN")}</strong></span>
+            <span>开始<strong>${time(session.started_at)}</strong></span>
+            <span>完成<strong>${time(session.finished_at)}</strong></span>
           </div>
-          <div class="draft-text">${escapeHtml(draft.text)}</div>
-        </article>
-      `).join("") || `<div class="case-muted">暂无 draft</div>`}
-    </div>
-    <div class="case-section">
-      <h3>消息上下文</h3>
+          ${session.codex_session_id
+            ? `<div class="inline-actions session-actions"><button class="button secondary" data-action="reset-session" data-case-id="${escapeHtml(item.case_id)}"><i data-lucide="refresh-cw"></i><span>重置 Codex Session</span></button></div>`
+            : ""}
+          <div class="progress-list">
+            ${(item.progress || []).map((entry) => `<div class="progress-row ${escapeHtml(entry.level)}"><span>${time(entry.created_at)}</span><strong>${escapeHtml(entry.message)}</strong></div>`).join("") || `<div class="case-muted">暂无进度</div>`}
+          </div>
+        </div>
+      </details>
+      <div class="case-section-head"><h3>回复草稿</h3><span>${Number(window.draftTotal || item.drafts?.length || 0)} 条</span></div>
+      <div class="draft-list">
+        ${(item.drafts || []).map((draft, index) => {
+          const panel = `draft-${draft.id}`;
+          return `
+          <details class="case-panel draft-panel" data-case-panel="${panel}" ${panelOpen(item.case_id, panel, index === 0) ? "open" : ""}>
+            <summary>
+              <span><strong>${draft.status === "sent" ? "已发送回复" : "回复草稿"} #${Number(draft.id)}</strong><small>${escapeHtml(draft.model || "未记录模型")} · ${time(draft.created_at)}</small></span>
+              ${badge(caseStatusLabel(draft.status), draft.status === "sent" ? "good" : "warn")}
+            </summary>
+            <div class="case-panel-body">
+              <div class="draft-actions">
+                <span>${draft.sent_at ? `发送于 ${time(draft.sent_at)}` : "尚未发送"}</span>
+                ${draft.status !== "sent" ? `<button class="button primary" data-action="send-draft" data-case-id="${escapeHtml(item.case_id)}" data-draft-id="${Number(draft.id)}"><i data-lucide="send"></i><span>发送</span></button>` : ""}
+              </div>
+              <div class="draft-text">${escapeHtml(draft.text)}</div>
+            </div>
+          </details>`;
+        }).join("") || `<div class="case-muted">暂无 draft</div>`}
+      </div>
+      <div class="case-section-head message-section-head"><h3>消息上下文</h3><span>${Number(window.messageTotal || item.messages?.length || 0)} 条</span></div>
       <div class="message-list">
-        ${(item.messages || []).map((message) => `
-          <div class="message-row ${message.direction === "outgoing" ? "outgoing" : ""}">
-            <div><strong>${escapeHtml(message.sender_name || message.sender_id)}</strong><span>${time(message.timestamp)}</span></div>
-            <p>${escapeHtml(message.text)}</p>
-          </div>
-        `).join("")}
+          ${(item.messages || []).map((message) => `
+            <div class="message-row ${message.direction === "outgoing" ? "outgoing" : ""}">
+              <div><strong>${escapeHtml(message.sender_name || message.sender_id)}</strong><span>${time(message.timestamp)}</span></div>
+              <p>${escapeHtml(message.text)}</p>
+            </div>
+          `).join("") || `<div class="case-muted">暂无消息</div>`}
       </div>
     </div>`;
 }
 
 function renderCases() {
+  const start = caseTotal ? casePage * casePageSize + 1 : 0;
+  const end = caseTotal ? Math.min(start + cases.length - 1, caseTotal) : 0;
   content.innerHTML = `
-    <div class="case-toolbar">
-      <div>
-        <strong>${cases.length} 个 Case</strong>
-        <span>${Number(workers.active || 0)} 运行 · ${Number(workers.queued || 0)} 排队</span>
-      </div>
-      <label class="worker-switch">
-        <span>${workers.paused ? "Worker 已暂停" : "Worker 运行中"}</span>
-        <input type="checkbox" data-action="workers-paused" ${workers.paused ? "checked" : ""}>
-      </label>
-    </div>
-    <div class="case-layout">
-      <div class="case-list">
-        ${cases.map((item) => `
-          <button class="case-item ${selectedCase?.case_id === item.case_id ? "active" : ""}" data-case-select="${escapeHtml(item.case_id)}">
-            <span class="case-item-head"><strong>${escapeHtml(item.title)}</strong>${badge(caseStatusLabel(item.status), caseTone(item.status))}</span>
-            <span class="case-preview">${escapeHtml(item.last_message || "")}</span>
-            <span class="case-meta">${escapeHtml(item.source_name)} · ${time(item.last_message_at)} · ${Number(item.draft_count || 0)} drafts</span>
-          </button>
-        `).join("") || `<div class="empty compact"><div>尚无微信 Case</div></div>`}
-      </div>
-      <div class="case-detail">
-        ${selectedCase ? renderCaseDetail(selectedCase) : `<div class="empty"><div><i data-lucide="inbox"></i><div>选择一个 Case</div></div></div>`}
-      </div>
+    <div class="case-workspace">
+      <section class="case-list-pane">
+        <div class="case-toolbar">
+          <div>
+            <strong>${caseTotal} 个 Case</strong>
+            <span>${Number(workers.active || 0)} 运行 · ${Number(workers.queued || 0)} 排队</span>
+          </div>
+          <label class="worker-switch">
+            <span>${workers.paused ? "Worker 已暂停" : "Worker 运行中"}</span>
+            <input type="checkbox" data-action="workers-paused" ${workers.paused ? "checked" : ""}>
+          </label>
+        </div>
+        <div class="case-list">
+          ${cases.map((item) => `
+            <button class="case-item ${selectedCase?.case_id === item.case_id ? "active" : ""}" data-case-select="${escapeHtml(item.case_id)}">
+              <span class="case-item-head"><strong>${escapeHtml(item.title)}</strong>${badge(caseStatusLabel(item.status), caseTone(item.status))}</span>
+              <span class="case-preview">${escapeHtml(item.last_message || "")}</span>
+              <span class="case-meta">${escapeHtml(item.source_name)} · ${time(item.last_message_at)} · ${Number(item.draft_count || 0)} drafts</span>
+            </button>
+          `).join("") || `<div class="empty compact"><div>尚无微信 Case</div></div>`}
+        </div>
+        <div class="case-pagination">
+          <button class="button secondary compact-button" data-action="case-prev" ${casePage <= 0 ? "disabled" : ""}>上一页</button>
+          <span>${start}-${end} / ${caseTotal}</span>
+          <button class="button secondary compact-button" data-action="case-next" ${caseHasMore ? "" : "disabled"}>下一页</button>
+        </div>
+      </section>
+      <section class="case-detail-pane">
+        ${selectedCase
+          ? renderCaseDetail(selectedCase)
+          : `<div class="empty case-empty"><div><i data-lucide="inbox"></i><div>选择一个 Case</div></div></div>`}
+      </section>
     </div>`;
 }
 
@@ -562,6 +632,8 @@ function renderRelease() {
 
 function render() {
   const [eyebrow, title] = views[activeView];
+  document.body.classList.toggle("view-cases", activeView === "cases");
+  content.classList.toggle("case-content", activeView === "cases");
   document.querySelector("#view-eyebrow").textContent = eyebrow;
   document.querySelector("#view-title").textContent = title;
   document.querySelectorAll(".nav-item").forEach((item) => {
@@ -575,6 +647,9 @@ function render() {
   else if (activeView === "assistant") renderAssistant();
   else renderRelease();
   icons();
+  if (activeView === "cases" && selectedCase) {
+    restoreCaseViewState(selectedCase.case_id);
+  }
 }
 
 function readAccountForm() {
@@ -651,13 +726,15 @@ async function load() {
   const [settingsBody, statusBody, casesBody, agentBody, knowledgeBody] = await Promise.all([
     api("/api/admin/settings"),
     api("/api/admin/status"),
-    api("/api/admin/cases"),
+    api(`/api/admin/cases?limit=${casePageSize}&offset=${casePage * casePageSize}`),
     api("/api/admin/agent"),
     api("/api/admin/kb/documents"),
   ]);
   settings = settingsBody.settings;
   status = statusBody;
   cases = casesBody.cases || [];
+  caseTotal = Number(casesBody.total || cases.length);
+  caseHasMore = Boolean(casesBody.hasMore);
   workers = casesBody.workers || {};
   agentDocument = agentBody.document;
   agentDirty = false;
@@ -751,18 +828,7 @@ document.addEventListener("click", async (event) => {
   }
   const caseButton = event.target.closest("[data-case-select]");
   if (caseButton) {
-    selectedCase = (
-      await api(
-        `/api/admin/case?caseId=${encodeURIComponent(caseButton.dataset.caseSelect)}`,
-      )
-    ).case;
-    render();
-    if (window.matchMedia("(max-width: 620px)").matches) {
-      document.querySelector(".case-detail")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    }
+    await loadCase(caseButton.dataset.caseSelect);
     return;
   }
   const knowledgeButton = event.target.closest("[data-kb-file]");
@@ -943,6 +1009,22 @@ document.addEventListener("click", async (event) => {
         }),
       });
       await refreshCases(true);
+    } else if (action === "case-history") {
+      const target = event.target.closest("[data-case-id]");
+      const expanded = target.dataset.expanded !== "1";
+      caseHistoryExpanded.set(target.dataset.caseId, expanded);
+      caseViewStates.delete(target.dataset.caseId);
+      await loadCase(target.dataset.caseId, { preserveView: false });
+    } else if (action === "case-prev" && casePage > 0) {
+      captureCaseViewState();
+      casePage -= 1;
+      selectedCase = null;
+      await refreshCases(false);
+    } else if (action === "case-next" && caseHasMore) {
+      captureCaseViewState();
+      casePage += 1;
+      selectedCase = null;
+      await refreshCases(false);
     } else if (action === "workers-paused") {
       await api("/api/admin/workers/pause", {
         method: "POST",
@@ -955,14 +1037,35 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+async function loadCase(caseId, options = {}) {
+  if (options.preserveView !== false) captureCaseViewState();
+  const history = caseHistoryExpanded.get(caseId) ? "1" : "0";
+  selectedCase = (
+    await api(
+      `/api/admin/case?caseId=${encodeURIComponent(caseId)}&history=${history}`,
+    )
+  ).case;
+  render();
+}
+
 async function refreshCases(includeDetail = false) {
-  const body = await api("/api/admin/cases");
+  if (includeDetail) captureCaseViewState();
+  const body = await api(
+    `/api/admin/cases?limit=${casePageSize}&offset=${casePage * casePageSize}`,
+  );
+  if (!body.cases?.length && casePage > 0 && Number(body.total || 0) > 0) {
+    casePage = Math.max(0, Math.ceil(Number(body.total) / casePageSize) - 1);
+    return refreshCases(includeDetail);
+  }
   cases = body.cases || [];
+  caseTotal = Number(body.total || cases.length);
+  caseHasMore = Boolean(body.hasMore);
   workers = body.workers || {};
   if (includeDetail && selectedCase) {
+    const history = caseHistoryExpanded.get(selectedCase.case_id) ? "1" : "0";
     selectedCase = (
       await api(
-        `/api/admin/case?caseId=${encodeURIComponent(selectedCase.case_id)}`,
+        `/api/admin/case?caseId=${encodeURIComponent(selectedCase.case_id)}&history=${history}`,
       )
     ).case;
   }

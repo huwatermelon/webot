@@ -370,15 +370,34 @@ export class CaseStore {
   }
 
   listCases(limit = 100) {
-    return this.db.prepare(`
+    return this.casePage({ limit }).cases;
+  }
+
+  casePage(options = {}) {
+    const limit = Math.min(
+      Math.max(Number(options.limit) || 50, 1),
+      200,
+    );
+    const offset = Math.max(Number(options.offset) || 0, 0);
+    const total = Number(
+      this.db.prepare("SELECT COUNT(*) AS count FROM cases").get().count || 0,
+    );
+    const cases = this.db.prepare(`
       SELECT c.*,
         (SELECT text FROM messages WHERE id=c.last_message_id) AS last_message,
         (SELECT COUNT(*) FROM drafts d WHERE d.case_id=c.case_id) AS draft_count,
         (SELECT status FROM worker_sessions w WHERE w.case_id=c.case_id) AS worker_status
       FROM cases c
       ORDER BY c.updated_at DESC
-      LIMIT ?
-    `).all(Math.min(Math.max(Number(limit) || 100, 1), 500));
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
+    return {
+      cases,
+      total,
+      limit,
+      offset,
+      hasMore: offset + cases.length < total,
+    };
   }
 
   caseRow(caseId) {
@@ -475,17 +494,51 @@ export class CaseStore {
     `).all(caseId, Math.min(Math.max(Number(limit) || 100, 1), 500));
   }
 
-  detail(caseId) {
+  detail(caseId, options = {}) {
     const value = this.caseRow(caseId);
     if (!value) return null;
+    const expanded = options.expanded === true;
+    const messageLimit = expanded ? 1000 : 40;
+    const draftLimit = expanded ? 200 : 8;
+    const progressLimit = expanded ? 500 : 40;
+    const messageTotal = Number(
+      this.db.prepare(
+        "SELECT COUNT(*) AS count FROM messages WHERE case_id=?",
+      ).get(caseId).count || 0,
+    );
+    const draftTotal = Number(
+      this.db.prepare(
+        "SELECT COUNT(*) AS count FROM drafts WHERE case_id=?",
+      ).get(caseId).count || 0,
+    );
+    const progressTotal = Number(
+      this.db.prepare(
+        "SELECT COUNT(*) AS count FROM progress WHERE case_id=?",
+      ).get(caseId).count || 0,
+    );
+    const messages = this.messages(caseId, messageLimit);
+    const drafts = this.drafts(caseId, draftLimit);
+    const progress = this.progress(caseId, progressLimit);
     return {
       ...value,
-      messages: this.messages(caseId),
-      drafts: this.drafts(caseId),
-      progress: this.progress(caseId),
+      messages,
+      drafts,
+      progress,
       workerSession: this.db
         .prepare("SELECT * FROM worker_sessions WHERE case_id=?")
         .get(caseId) || null,
+      displayWindow: {
+        expanded,
+        messageTotal,
+        messageShown: messages.length,
+        messageTruncated: messages.length < messageTotal,
+        draftTotal,
+        draftShown: drafts.length,
+        draftTruncated: drafts.length < draftTotal,
+        progressTotal,
+        progressShown: progress.length,
+        progressTruncated: progress.length < progressTotal,
+      },
     };
   }
 

@@ -125,6 +125,22 @@ test("new installations use an isolated workspace under the data directory", () 
   assert.equal(config.caseManagement.ownerIntermediateItems, false);
 });
 
+test("source installations use the Webot repository as the Codex workdir", () => {
+  const config = loadConfig({
+    WEBOT_DATA_DIR: "/tmp/webot-user-data",
+    WEBOT_RUNTIME_MODE: "source",
+    WEBOT_REPO_DIR: "/tmp/webot-repository",
+  }, {
+    assistant: {
+      workingDirectory: "/tmp/webot-user-data/workspace",
+    },
+  });
+  assert.equal(
+    config.assistant.workingDirectory,
+    "/tmp/webot-repository",
+  );
+});
+
 test("worker timeout and owner intermediate items are configurable", () => {
   const config = loadConfig({}, {
     assistant: { timeoutMs: -1 },

@@ -16,6 +16,24 @@ function value(setting, fallback) {
   return setting === undefined ? fallback : setting;
 }
 
+function workingDirectory(env, settings, defaultDataDir) {
+  const configured = String(settings.workingDirectory || "").trim();
+  const legacyWorkspace = path.resolve(defaultDataDir, "workspace");
+  const sourceRepository =
+    String(env.WEBOT_RUNTIME_MODE || "").trim() === "source"
+      ? String(env.WEBOT_REPO_DIR || "").trim()
+      : "";
+  const fallback =
+    String(env.WEBOT_CODEX_WORKDIR || "").trim() ||
+    sourceRepository ||
+    legacyWorkspace;
+  if (!configured) return path.resolve(fallback);
+  if (sourceRepository && path.resolve(configured) === legacyWorkspace) {
+    return path.resolve(sourceRepository);
+  }
+  return path.resolve(configured);
+}
+
 function stringSet(valueToParse, fallback = "") {
   return new Set(
     (Array.isArray(valueToParse)
@@ -170,9 +188,10 @@ export function loadConfig(env = process.env, settings = {}) {
         assistantSettings.codexHome,
         env.WEBOT_CODEX_HOME || env.CODEX_HOME || path.join(os.homedir(), ".codex"),
       ),
-      workingDirectory: value(
-        assistantSettings.workingDirectory,
-        env.WEBOT_CODEX_WORKDIR || path.join(defaultDataDir, "workspace"),
+      workingDirectory: workingDirectory(
+        env,
+        assistantSettings,
+        defaultDataDir,
       ),
       codexModel: value(
         assistantSettings.codexModel,

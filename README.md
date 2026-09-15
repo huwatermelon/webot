@@ -43,6 +43,10 @@ accounts, assistant providers, reply policy, and knowledge from the console.
 New installations start in dry-run mode so outbound messages are not sent until
 live mode is explicitly enabled.
 
+In source mode, Codex runs from the Webot repository by default. The private
+instance `AGENTS.md`, sessions, database, credentials, and knowledge remain
+under the local Webot data directory and are injected without being committed.
+
 Owner control commands include `/session`, `/session list`,
 `/session new <name>`, `/session <name>`, `/session delete <name>`,
 `/models` (`/modes` alias), `/model`, `/effort`, `/status`, `/clear`, and `/stop`. Named

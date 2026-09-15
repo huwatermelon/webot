@@ -55,7 +55,7 @@ export class WebotApplication {
       this.logger,
     );
     this.workspacePolicy = new WorkspacePolicy(
-      this.config.assistant.workingDirectory,
+      path.join(this.config.dataDir, "workspace"),
     );
     await this.workspacePolicy.ensure();
     const accessForMessage = (message) =>
@@ -64,6 +64,7 @@ export class WebotApplication {
       requesterAccess: accessForMessage,
       searchKnowledge: (query, context) =>
         this.knowledgeBase.search(query, context),
+      readAgentPolicy: () => this.workspacePolicy.read(),
     });
     const store = new SessionStore(
       this.config.stateDir,
@@ -166,12 +167,12 @@ export class WebotApplication {
     this.caseManager?.stopAll();
   }
 
-  listCases(limit) {
-    return this.caseStore.listCases(limit);
+  listCases(options) {
+    return this.caseStore.casePage(options);
   }
 
-  caseDetail(caseId) {
-    return this.caseStore.detail(caseId);
+  caseDetail(caseId, options) {
+    return this.caseStore.detail(caseId, options);
   }
 
   runCase(caseId) {
@@ -208,7 +209,13 @@ export class WebotApplication {
   }
 
   settings() {
-    return this.settingsStore.publicSettings(serializeConfig(this.config));
+    const settings = this.settingsStore.publicSettings(
+      serializeConfig(this.config),
+    );
+    settings.assistant ||= {};
+    settings.assistant.workingDirectory =
+      this.config.assistant.workingDirectory;
+    return settings;
   }
 
   async syncKnowledgeBase() {

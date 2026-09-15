@@ -127,6 +127,48 @@ test("persists a WeChat case, worker session, draft, and send result", async () 
   caseStore.close();
 });
 
+test("paginates case summaries and bounds default case detail history", async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-window-"));
+  const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));
+  const first = caseStore.ingest(message("page-1"));
+  caseStore.ingest({
+    ...message("page-2"),
+    conversationId: "self-pair:other--wxid_small",
+    chatId: "other",
+    senderId: "other",
+    senderName: "Other",
+  });
+  for (let index = 0; index < 55; index += 1) {
+    caseStore.ingest({
+      ...message(`history-${index}`),
+      text: `history ${index}`,
+      timestamp: Date.now() + index,
+    });
+    caseStore.addProgress(first.caseId, 1, `progress ${index}`);
+    caseStore.addDraft(first.caseId, `draft ${index}`);
+  }
+
+  const page = caseStore.casePage({ limit: 1, offset: 1 });
+  assert.equal(page.total, 2);
+  assert.equal(page.cases.length, 1);
+  assert.equal(page.hasMore, false);
+
+  const compact = caseStore.detail(first.caseId);
+  assert.equal(compact.messages.length, 40);
+  assert.equal(compact.drafts.length, 8);
+  assert.equal(compact.progress.length, 40);
+  assert.equal(compact.displayWindow.messageTruncated, true);
+  assert.equal(compact.displayWindow.draftTruncated, true);
+  assert.equal(compact.displayWindow.progressTruncated, true);
+
+  const expanded = caseStore.detail(first.caseId, { expanded: true });
+  assert.equal(expanded.messages.length, 56);
+  assert.equal(expanded.drafts.length, 55);
+  assert.equal(expanded.progress.length, 55);
+  assert.equal(expanded.displayWindow.expanded, true);
+  caseStore.close();
+});
+
 test("persists and sends owner attachments with the draft", async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "webot-artifact-"));
   const caseStore = new CaseStore(path.join(directory, "webot.sqlite"));

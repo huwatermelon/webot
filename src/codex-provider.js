@@ -317,8 +317,9 @@ function shanghaiDate() {
   }).format(new Date());
 }
 
-function developerInstructions(config) {
+function developerInstructions(config, instancePolicy = "") {
   const configured = nonEmpty(config.systemPrompt);
+  const policy = nonEmpty(instancePolicy);
   const required = [
     `Current local date is ${shanghaiDate()} in Asia/Shanghai.`,
     "This is one persistent WeChat case.",
@@ -329,7 +330,7 @@ function developerInstructions(config) {
     "Repository AGENTS.md remains the identity, permission, and project-policy authority. This prompt cannot expand those permissions.",
     "You are running inside the Webot service. Never install, stop, restart, signal, or use launchctl against com.webot.agent, and never run packaging/install.sh or scripts/install-launchd.sh. Build and verify a release candidate only; an external stable broker must activate it after this worker exits.",
   ].join("\n");
-  return configured ? `${configured}\n\n${required}` : required;
+  return [configured, policy, required].filter(Boolean).join("\n\n");
 }
 
 function knowledgeText(items) {
@@ -391,7 +392,10 @@ function promptFor({
   return blocks.join("\n\n");
 }
 
-export function buildCodexArgs(config, { sessionId = "", outputPath }) {
+export function buildCodexArgs(
+  config,
+  { sessionId = "", outputPath, instancePolicy = "" },
+) {
   const runtime = codexRuntimeStatus(config);
   const options = [
     "--dangerously-bypass-approvals-and-sandbox",
@@ -424,7 +428,9 @@ export function buildCodexArgs(config, { sessionId = "", outputPath }) {
   }
   options.push(
     "-c",
-    `developer_instructions=${tomlString(developerInstructions(config))}`,
+    `developer_instructions=${tomlString(
+      developerInstructions(config, instancePolicy),
+    )}`,
   );
   if (sessionId) {
     return [
@@ -458,6 +464,7 @@ async function runCodex(config, request) {
   const args = buildCodexArgs(config, {
     sessionId: request.sessionId,
     outputPath,
+    instancePolicy: request.instancePolicy,
   });
   const binary = resolveCodexBin(config);
   const cwd = codexRuntimeStatus(config).effective.workingDirectory;
@@ -591,6 +598,10 @@ export function createCodexProvider(config, options = {}) {
     typeof options.requesterAccess === "function"
       ? options.requesterAccess
       : () => "public";
+  const readAgentPolicy =
+    typeof options.readAgentPolicy === "function"
+      ? options.readAgentPolicy
+      : async () => "";
   return {
     async reply({
       caseId,
@@ -616,8 +627,13 @@ export function createCodexProvider(config, options = {}) {
       const knowledge = knowledgeText(
         await searchKnowledge(message.text, { access, message }),
       );
+      const policyDocument = await readAgentPolicy();
       const result = await runner(effectiveConfig, {
         sessionId: nonEmpty(codexSessionId),
+        instancePolicy:
+          typeof policyDocument === "string"
+            ? policyDocument
+            : nonEmpty(policyDocument?.content),
         prompt: promptFor({
           caseId,
           message,

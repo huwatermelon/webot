@@ -220,9 +220,13 @@ export function createServer({
           request.method === "GET" &&
           url.pathname === "/api/admin/cases"
         ) {
+          const page = application.listCases({
+            limit: url.searchParams.get("limit"),
+            offset: url.searchParams.get("offset"),
+          });
           respond(response, 200, {
             ok: true,
-            cases: application.listCases(url.searchParams.get("limit")),
+            ...page,
             workers: application.caseManager.status(),
           });
           return;
@@ -233,6 +237,9 @@ export function createServer({
         ) {
           const value = application.caseDetail(
             String(url.searchParams.get("caseId") || ""),
+            {
+              expanded: url.searchParams.get("history") === "1",
+            },
           );
           if (!value) {
             respond(response, 404, { ok: false, error: "case not found" });

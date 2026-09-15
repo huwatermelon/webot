@@ -79,6 +79,7 @@ test("builds new and resume commands with editable Codex settings", async () => 
   assert.equal(runtime.binaryReady, true);
   const fresh = buildCodexArgs(config, {
     outputPath: path.join(directory, "fresh.txt"),
+    instancePolicy: "# Instance policy\n\n- Keep chat scope isolated.",
   });
   assert.deepEqual(fresh.slice(0, 1), ["exec"]);
   assert.ok(fresh.includes("-C"));
@@ -93,6 +94,9 @@ test("builds new and resume commands with editable Codex settings", async () => 
   assert.ok(
     fresh.some((item) =>
       item.includes("Never put a local file path")),
+  );
+  assert.ok(
+    fresh.some((item) => item.includes("Keep chat scope isolated")),
   );
 
   const resumed = buildCodexArgs(config, {
@@ -118,6 +122,9 @@ test("returns structured Codex results through the provider", async () => {
         path: "owner/test.md",
         content: "owner knowledge",
       }],
+      readAgentPolicy: async () => ({
+        content: "# Private policy\n\n- Call the owner 老大.",
+      }),
       runCodex: async (_config, request) => {
         await request.onItem?.({
           type: "agent_message",
@@ -126,7 +133,8 @@ test("returns structured Codex results through the provider", async () => {
         return {
           text:
             request.prompt.includes("Access level: owner") &&
-            request.prompt.includes("owner knowledge")
+            request.prompt.includes("owner knowledge") &&
+            request.instancePolicy.includes("Call the owner 老大")
               ? "收到"
               : "unexpected",
           sessionId: "session-2",
