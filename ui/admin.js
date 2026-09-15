@@ -57,12 +57,20 @@ let casePage = 0;
 let caseTotal = 0;
 let caseHasMore = false;
 const casePageSize = 50;
+const caseListWidthStorageKey = "webot-case-list-width";
+const caseListDefaultWidth = 300;
+const caseListMinWidth = 240;
+const caseListMaxWidth = 520;
+const caseDetailMinWidth = 420;
+const caseResizerWidth = 8;
 const pageRuntimeRevision =
   document.querySelector('meta[name="webot-runtime-revision"]')?.content || "";
 let runtimeUpdateNoticeRevision = "";
 const caseHistoryExpanded = new Map();
 const caseViewStates = new Map();
 const caseSessionSelections = new Map();
+let caseListResizing = false;
+let caseWorkspaceResizeObserver = null;
 let agentDocument = null;
 let agentDirty = false;
 const settingsFoldOpen = new Set();
@@ -402,12 +410,122 @@ function renderCases() {
           <button class="button secondary compact-button" data-action="case-next" ${caseHasMore ? "" : "disabled"}>下一页</button>
         </div>
       </section>
+      <div
+        class="case-resizer"
+        data-case-resizer
+        role="separator"
+        aria-label="调整 Case 列表宽度"
+        aria-orientation="vertical"
+        aria-valuemin="${caseListMinWidth}"
+        aria-valuemax="${caseListMaxWidth}"
+        tabindex="0"
+      ></div>
       <section class="case-detail-pane">
         ${selectedCase
           ? renderCaseDetail(selectedCase)
           : `<div class="empty case-empty"><div><i data-lucide="inbox"></i><div>选择一个 Case</div></div></div>`}
       </section>
     </div>`;
+}
+
+function storedCaseListWidth() {
+  try {
+    return Number(window.localStorage.getItem(caseListWidthStorageKey)) || caseListDefaultWidth;
+  } catch {
+    return caseListDefaultWidth;
+  }
+}
+
+function caseListWidthBounds(workspace) {
+  const available = workspace.clientWidth - caseResizerWidth - caseDetailMinWidth;
+  return {
+    min: caseListMinWidth,
+    max: Math.max(caseListMinWidth, Math.min(caseListMaxWidth, available)),
+  };
+}
+
+function setCaseListWidth(workspace, width, persist = false) {
+  const bounds = caseListWidthBounds(workspace);
+  const nextWidth = Math.round(
+    Math.min(bounds.max, Math.max(bounds.min, Number(width) || caseListDefaultWidth)),
+  );
+  workspace.style.setProperty("--case-list-width", `${nextWidth}px`);
+  const resizer = workspace.querySelector("[data-case-resizer]");
+  if (resizer) {
+    resizer.setAttribute("aria-valuenow", String(nextWidth));
+    resizer.setAttribute("aria-valuemax", String(bounds.max));
+  }
+  if (persist) {
+    try {
+      window.localStorage.setItem(caseListWidthStorageKey, String(nextWidth));
+    } catch {
+      // The layout remains adjustable when browser storage is unavailable.
+    }
+  }
+  return nextWidth;
+}
+
+function initializeCaseResize() {
+  caseWorkspaceResizeObserver?.disconnect();
+  caseWorkspaceResizeObserver = null;
+  const workspace = content.querySelector(".case-workspace");
+  const resizer = workspace?.querySelector("[data-case-resizer]");
+  if (!workspace || !resizer || window.matchMedia("(max-width: 680px)").matches) return;
+
+  setCaseListWidth(workspace, storedCaseListWidth());
+  let pointerId = null;
+
+  const finishResize = () => {
+    if (pointerId === null) return;
+    pointerId = null;
+    caseListResizing = false;
+    workspace.classList.remove("resizing");
+    document.body.classList.remove("case-resizing");
+    setCaseListWidth(
+      workspace,
+      Number.parseInt(workspace.style.getPropertyValue("--case-list-width"), 10),
+      true,
+    );
+  };
+
+  resizer.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    pointerId = event.pointerId;
+    caseListResizing = true;
+    workspace.classList.add("resizing");
+    document.body.classList.add("case-resizing");
+    resizer.setPointerCapture(pointerId);
+  });
+  resizer.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== pointerId) return;
+    setCaseListWidth(workspace, event.clientX - workspace.getBoundingClientRect().left);
+  });
+  resizer.addEventListener("pointerup", finishResize);
+  resizer.addEventListener("pointercancel", finishResize);
+  resizer.addEventListener("dblclick", () => {
+    setCaseListWidth(workspace, caseListDefaultWidth, true);
+  });
+  resizer.addEventListener("keydown", (event) => {
+    const current = Number.parseInt(
+      workspace.style.getPropertyValue("--case-list-width"),
+      10,
+    );
+    const bounds = caseListWidthBounds(workspace);
+    let nextWidth = current;
+    if (event.key === "ArrowLeft") nextWidth -= 16;
+    else if (event.key === "ArrowRight") nextWidth += 16;
+    else if (event.key === "Home") nextWidth = bounds.min;
+    else if (event.key === "End") nextWidth = bounds.max;
+    else return;
+    event.preventDefault();
+    setCaseListWidth(workspace, nextWidth, true);
+  });
+
+  caseWorkspaceResizeObserver = new ResizeObserver(() => {
+    setCaseListWidth(workspace, storedCaseListWidth());
+  });
+  caseWorkspaceResizeObserver.observe(workspace);
 }
 
 function field(label, id, value, options = {}) {
@@ -669,6 +787,7 @@ function render() {
   renderRuntimeIdentity();
   renderHeaderControls();
   icons();
+  if (activeView === "cases") initializeCaseResize();
   if (activeView === "cases" && selectedCase) {
     restoreCaseViewState(selectedCase.case_id);
   }
@@ -799,7 +918,7 @@ async function load() {
   document.querySelector("#service-label").textContent = "服务运行中";
   dirty = false;
   saveState.textContent = "";
-  render();
+  if (!caseListResizing) render();
 }
 
 document.addEventListener("input", (event) => {
@@ -1142,7 +1261,7 @@ async function refreshCases(includeDetail = false) {
       )
     ).case;
   }
-  render();
+  if (!caseListResizing) render();
 }
 
 async function reloadForRuntimeRevisionChange() {
@@ -1162,7 +1281,7 @@ async function reloadForRuntimeRevisionChange() {
 }
 
 window.setInterval(() => {
-  if (activeView === "cases" && !dirty) {
+  if (activeView === "cases" && !dirty && !caseListResizing) {
     refreshCases(Boolean(selectedCase)).catch(() => {});
   }
 }, 3000);

@@ -10,6 +10,10 @@ const javascript = fs.readFileSync(
   new URL("../ui/admin.js", import.meta.url),
   "utf8",
 );
+const css = fs.readFileSync(
+  new URL("../ui/admin.css", import.meta.url),
+  "utf8",
+);
 
 test("admin navigation keeps cases, knowledge, and settings only", () => {
   assert.match(html, /data-view="cases"/);
@@ -35,6 +39,19 @@ test("case workspace groups named sessions and reloads on runtime revision chang
   assert.match(javascript, /class="case-session-select"/);
   assert.match(javascript, /reloadForRuntimeRevisionChange/);
   assert.match(javascript, /window\.location\.reload\(\)/);
+});
+
+test("case list width is narrower, draggable, persistent, and mobile-safe", () => {
+  assert.match(javascript, /caseListDefaultWidth = 300/);
+  assert.match(javascript, /data-case-resizer/);
+  assert.match(javascript, /setPointerCapture/);
+  assert.match(javascript, /caseListWidthStorageKey/);
+  assert.match(javascript, /window\.localStorage\.setItem/);
+  assert.match(javascript, /event\.key === "ArrowLeft"/);
+  assert.match(javascript, /event\.key === "ArrowRight"/);
+  assert.match(css, /--case-list-width: 300px/);
+  assert.match(css, /\.case-resizer \{[^}]*cursor: col-resize/);
+  assert.match(css, /@media \(max-width: 680px\)[\s\S]*\.case-resizer \{ display: none; \}/);
 });
 
 test("knowledge editing is independent and knowledge configuration lives in settings", () => {

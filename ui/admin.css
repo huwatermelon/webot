@@ -314,10 +314,14 @@ textarea { min-height: 86px; resize: vertical; line-height: 1.5; }
 
 .view-cases main { height: calc(100vh - 98px); }
 .content.case-content { height: 100%; max-width: none; margin: 0; padding: 0; }
-.case-workspace { width: 100%; height: 100%; min-height: 0; display: grid; grid-template-columns: minmax(360px, 42%) minmax(0, 1fr); background: #fff; }
+.case-workspace { --case-list-width: 300px; width: 100%; height: 100%; min-height: 0; display: grid; grid-template-columns: minmax(240px, var(--case-list-width)) 8px minmax(0, 1fr); background: #fff; }
 .case-list-pane, .case-detail-pane { min-width: 0; min-height: 0; overflow: hidden; }
-.case-list-pane { border-right: 1px solid var(--line); background: var(--surface-quiet); display: flex; flex-direction: column; }
+.case-list-pane { background: var(--surface-quiet); display: flex; flex-direction: column; }
 .case-detail-pane { background: #fff; display: flex; flex-direction: column; }
+.case-resizer { position: relative; min-width: 8px; cursor: col-resize; touch-action: none; outline: none; background: #fff; }
+.case-resizer::after { content: ""; position: absolute; inset: 0 auto 0 3px; width: 1px; background: var(--line); transition: width .12s ease, background .12s ease; }
+.case-resizer:hover::after, .case-resizer:focus-visible::after, .case-workspace.resizing .case-resizer::after { width: 2px; background: var(--primary); }
+body.case-resizing { cursor: col-resize; user-select: none; }
 .case-toolbar { min-height: 58px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .case-toolbar > div strong, .case-toolbar > div span { display: block; }
 .case-toolbar > div span { margin-top: 3px; color: var(--muted); font-size: 11px; }
@@ -383,7 +387,6 @@ textarea { min-height: 86px; resize: vertical; line-height: 1.5; }
   .account-list { display: flex; overflow-x: auto; }
   .account-item { min-width: 190px; border-right: 1px solid var(--line); border-bottom: 0; }
   .knowledge-studio { grid-template-columns: 220px minmax(0, 1fr); }
-  .case-workspace { grid-template-columns: minmax(300px, 38%) minmax(0, 1fr); }
   .session-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -425,6 +428,7 @@ textarea { min-height: 86px; resize: vertical; line-height: 1.5; }
   .knowledge-editor-shell .document-editor, .knowledge-preview { min-height: 360px; }
   .view-cases main { height: calc(100vh - 94px); }
   .case-workspace { grid-template-columns: 1fr; grid-template-rows: minmax(205px, 38%) minmax(0, 62%); }
+  .case-resizer { display: none; }
   .case-list-pane { border-right: 0; border-bottom: 1px solid var(--line); }
   .case-toolbar { min-height: 50px; }
   .case-detail-head { min-height: 54px; padding: 9px 10px; }
